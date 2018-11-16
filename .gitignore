@@ -1,0 +1,13 @@
+*.pdf
+*.png
+blender
+*.gz
+gibson-data
+GibsonEnv
+*.zip
+__pycache__
+run_blender
+*~
+blender*
+meshcut
+path.txt
