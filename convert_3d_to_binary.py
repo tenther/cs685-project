@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 import cv2
+import math
 import matplotlib.pyplot as plt
 import meshcut
 import numpy as np
 import pdb
+import random
 import sys
 
 def load_obj(fn):
@@ -20,35 +22,32 @@ def load_obj(fn):
     faces = np.array(faces) - 1
     return verts, faces
 
-def main(mesh_file_name):
-    verts, faces = load_obj(mesh_file_name)
+def get_cross_section(verts, faces):
     z =  np.min(verts[:,-1]) + 0.5 # 0.5 is the height of husky, actually it should be 0.37
     # cut the mesh with a surface whose value on z-axis is plane_orig, and its normal is plane_normal vector
     #print('verts: {}'.format(verts[0]))
     cross_section = meshcut.cross_section(verts, faces, plane_orig=(0, 0, z), plane_normal=(0, 0, 1))
+    return cross_section
 
-    cross_section_2d = [c[:,0:2] for c in cross_section]
+def make_free_space_image(cross_section_2d, px_per_meter, padding_meters):
     min_x = min([x[:,0].min() for x in cross_section_2d])
     max_x = max([x[:,0].max() for x in cross_section_2d])
 
     min_y = min([x[:,1].min() for x in cross_section_2d])
     max_y = max([x[:,1].max() for x in cross_section_2d])
 
-    px_per_meter = 500
+    image_height = int(np.ceil(px_per_meter * (max_x - min_x) + px_per_meter * padding_meters))
+    image_width  = int(np.ceil(px_per_meter * (max_y - min_y) + px_per_meter * padding_meters))
 
-    image_height = int(np.ceil(px_per_meter * (max_x - min_x) + px_per_meter))
-    image_width  = int(np.ceil(px_per_meter * (max_y - min_y) + px_per_meter))
-
-    x_adj = -min_x * px_per_meter + px_per_meter/2
-    y_adj = -min_y * px_per_meter + px_per_meter/2
+    x_adj = -min_x * px_per_meter + px_per_meter * padding_meters / 2.0
+    y_adj = -min_y * px_per_meter + px_per_meter * padding_meters / 2.0
 
     lines = [np.round(x * px_per_meter + np.array([x_adj,y_adj]),0).astype(np.int32) for x in cross_section_2d]
-    
 
     image = np.zeros((image_width, image_height, 3), np.uint8)
     cv2.polylines(image, lines, False, (255, 255, 255), thickness=3)
 
-    # Fill in gaps
+    # Fill in gaps for Allensville
     fix_up_lines = [
         np.array([lines[0][-1], lines[2][-1]]),
         np.array([lines[2][0], lines[4][-1]]),
@@ -56,9 +55,9 @@ def main(mesh_file_name):
         np.array([lines[4][0], lines[6][-1]]),
         np.array([lines[6][0], lines[7][-1]]),
         np.array([lines[5][0], lines[7][0]]),
-        np.array([lines[8][0],  lines[8][-1]]),
-        np.array([lines[16][0],  lines[16][-1]]),
-        np.array([lines[10][0],  lines[10][-1]]),
+        np.array([lines[8][0], lines[8][-1]]),
+        np.array([lines[16][0], lines[16][-1]]),
+        np.array([lines[10][0], lines[10][-1]]),
         np.array([lines[19][0], lines[19][-1]]),
         ]
     cv2.polylines(image, fix_up_lines, False, (255, 255, 255), thickness=3)
@@ -80,23 +79,94 @@ def main(mesh_file_name):
                         fontScale,
                         fontColor,
                         lineType)
-
     
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     mask = np.zeros((image_width + 2, image_height + 2), np.uint8)
     cv2.floodFill(gray, mask, (2000,2000), 255)
+    return image, gray
 
-    cv2.imwrite('output.png',gray)
+def main(mesh_file_name,px_per_meter, padding_meters, num_nodes, epsilon):
+    verts, faces = load_obj(mesh_file_name)
+    cross_section = get_cross_section(verts, faces)
+    cross_section_2d = [c[:,0:2] for c in cross_section]
+    floor_map, free = make_free_space_image(cross_section_2d, px_per_meter, padding_meters)
+
+    cv2.imwrite('free.png',free)
+
+    min_y = min([x[:,0].min() for x in cross_section_2d]) - padding_meters/2.0
+    max_y = max([x[:,0].max() for x in cross_section_2d]) + padding_meters/2.0
+    min_x = min([x[:,1].min() for x in cross_section_2d]) - padding_meters/2.0
+    max_x = max([x[:,1].max() for x in cross_section_2d]) + padding_meters/2.0
+
+    def random_x():
+        return random.random() * (max_x - min_x) + min_x
+        
+    def random_y():
+        return random.random() * (max_y - min_y) + min_y
+
+    def x_to_pixel(x):
+        return int((x - min_x) * px_per_meter + px_per_meter * padding_meters / 2.0)
+
+    def y_to_pixel(y):
+        return int((y - min_y) * px_per_meter + px_per_meter * padding_meters / 2.0)
+
+    def point_to_pixel(p):
+        return x_to_pixel(p[0]), y_to_pixel(p[1])
+
+    def random_point():
+        x = random_x()
+        y = random_y()
+        return x,y
+
+    def free_point(x,y):
+        return free[x_to_pixel(x), y_to_pixel(y)] == 255
+
+    def random_free_point():
+        while True:
+            x,y = random_point()
+            if free_point(x,y):
+                return x, y
+
+
+    starting_point = random_free_point()
+    nodes_x = np.zeros(num_nodes, np.float32)
+    nodes_y = np.zeros(num_nodes, np.float32)
+    nodes_x[0] = starting_point[0]
+    nodes_y[0] = starting_point[1]
+    edges = np.full((num_nodes-1, 2), -1)
+    edges_from_px = []
+    edges_to_px = []
+
+    pdb.set_trace()
+    for i in range(1, num_nodes):
+        while True:
+            next_node = random_point()
+            distances = np.sqrt(np.power(nodes_x[:i] - next_node[0], 2) + np.power(nodes_y[:i] - next_node[1], 2))
+            closest_point_idx = np.argmin(distances)
+            theta = math.atan2(next_node[1] - nodes_y[closest_point_idx], next_node[0] - nodes_x[closest_point_idx])
+            node = (nodes_x[closest_point_idx] + np.cos(theta) * epsilon,
+                    nodes_y[closest_point_idx] + np.sin(theta) * epsilon)
+            if free_point(*node):
+                nodes_x[i] = node[0]
+                nodes_y[i] = node[1]
+                edges[i-1][0] = closest_point_idx
+                edges[i-1][1] = i
+                edges_from_px.append(point_to_pixel((nodes_x[closest_point_idx], nodes_y[closest_point_idx])))
+                edges_to_px.append(point_to_pixel(node))
+                break
 
     
+    for i in range(len(edges_from_px)):
+        cv2.line(floor_map, edges_from_px[i], edges_to_px[i], (0, 0, 255), thickness=5)
 
-#    cv2.imwrite('output.png',image)
+    cv2.imwrite('floormap.png',floor_map)
+    
 
 if __name__ == "__main__":    
     import argparse
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--mesh_name', type=str, default='gibson-data/dataset/Allensville/mesh_z_up.obj')
     args = parser.parse_args()
-    main(args.mesh_name)
+    main(args.mesh_name, 500, 2.0, 1000, .1)
 
