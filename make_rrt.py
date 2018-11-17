@@ -43,7 +43,6 @@ def main(mesh_file_name, px_per_meter, padding_meters, num_nodes, epsilon):
     print("Wrote {}".format(config_file_name))
     cv2.imwrite(free_file_name, free)
     print("Wrote {}".format(free_file_name))
-    
 
 if __name__ == "__main__":    
     import argparse
