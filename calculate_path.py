@@ -53,7 +53,6 @@ class AStarHeap(object):
         return self.size
 
 def A_star_search(start_node, goal_node, nodes_x, nodes_y, edges_idx):
-    
 
     def node_distance(n0, n1):
         return math.sqrt((nodes_x[n0] - nodes_x[n1])**2 + (nodes_y[n0] - nodes_y[n1])**2)
@@ -108,7 +107,7 @@ def main(dir, x0, y0, x1, y1):
     free      = npfile['arr_3']
 
     with open(config_file_name, 'rb') as config_file:
-        config    = pickle.load(config_file)
+        config = pickle.load(config_file)
     min_x = config['min_x']
     max_x = config['max_x']
     min_y = config['min_y']
