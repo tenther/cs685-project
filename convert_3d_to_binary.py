@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import bresenham
 import cv2
 import math
 import matplotlib.pyplot as plt
@@ -84,7 +85,17 @@ def make_free_space_image(cross_section_2d, px_per_meter, padding_meters):
 
     mask = np.zeros((image_width + 2, image_height + 2), np.uint8)
     cv2.floodFill(gray, mask, (2000,2000), 255)
-    return image, gray
+
+    kernel = np.ones((5,5),np.uint8)
+    erosion = cv2.erode(gray,kernel,iterations = 3)
+
+    return image, erosion
+
+def line_check(p0, p1, free):
+    for p in bresenham.line_points(p0, p1):
+        if free[p[1], p[0]] != 255:
+            return False
+    return True
 
 def main(mesh_file_name,px_per_meter, padding_meters, num_nodes, epsilon):
     verts, faces = load_obj(mesh_file_name)
@@ -94,10 +105,10 @@ def main(mesh_file_name,px_per_meter, padding_meters, num_nodes, epsilon):
 
     cv2.imwrite('free.png',free)
 
-    min_y = min([x[:,0].min() for x in cross_section_2d]) - padding_meters/2.0
-    max_y = max([x[:,0].max() for x in cross_section_2d]) + padding_meters/2.0
-    min_x = min([x[:,1].min() for x in cross_section_2d]) - padding_meters/2.0
-    max_x = max([x[:,1].max() for x in cross_section_2d]) + padding_meters/2.0
+    min_x = min([x[:,0].min() for x in cross_section_2d]) - padding_meters/2.0
+    max_x = max([x[:,0].max() for x in cross_section_2d]) + padding_meters/2.0
+    min_y = min([x[:,1].min() for x in cross_section_2d]) - padding_meters/2.0
+    max_y = max([x[:,1].max() for x in cross_section_2d]) + padding_meters/2.0
 
     def random_x():
         return random.random() * (max_x - min_x) + min_x
@@ -120,7 +131,12 @@ def main(mesh_file_name,px_per_meter, padding_meters, num_nodes, epsilon):
         return x,y
 
     def free_point(x,y):
-        return free[x_to_pixel(x), y_to_pixel(y)] == 255
+        x_px = x_to_pixel(x)
+        y_px = x_to_pixel(y)
+        # check image boundaries due to rounding errors
+        return (x_px >= 0 and x_px < free.shape[1] and
+                y_px >= 0 and y_px < free.shape[0] and
+                free[y_px, x_px] == 255)
 
     def random_free_point():
         while True:
@@ -138,7 +154,7 @@ def main(mesh_file_name,px_per_meter, padding_meters, num_nodes, epsilon):
     edges_from_px = []
     edges_to_px = []
 
-    pdb.set_trace()
+#    pdb.set_trace()
     for i in range(1, num_nodes):
         while True:
             next_node = random_point()
@@ -147,15 +163,18 @@ def main(mesh_file_name,px_per_meter, padding_meters, num_nodes, epsilon):
             theta = math.atan2(next_node[1] - nodes_y[closest_point_idx], next_node[0] - nodes_x[closest_point_idx])
             node = (nodes_x[closest_point_idx] + np.cos(theta) * epsilon,
                     nodes_y[closest_point_idx] + np.sin(theta) * epsilon)
-            if free_point(*node):
+
+            p0 = point_to_pixel((nodes_x[closest_point_idx], nodes_y[closest_point_idx]))
+            p1 = point_to_pixel(node)
+
+            if free_point(*node) and line_check(p0, p1, free):
                 nodes_x[i] = node[0]
                 nodes_y[i] = node[1]
                 edges[i-1][0] = closest_point_idx
                 edges[i-1][1] = i
-                edges_from_px.append(point_to_pixel((nodes_x[closest_point_idx], nodes_y[closest_point_idx])))
-                edges_to_px.append(point_to_pixel(node))
+                edges_from_px.append(p0)
+                edges_to_px.append(p1)
                 break
-
     
     for i in range(len(edges_from_px)):
         cv2.line(floor_map, edges_from_px[i], edges_to_px[i], (0, 0, 255), thickness=5)
@@ -167,6 +186,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--mesh_name', type=str, default='gibson-data/dataset/Allensville/mesh_z_up.obj')
+    parser.add_argument('-n', '--num_nodes', type=int, default=5000)
+    parser.add_argument('-e', '--epsilon', type=float, default=.1)
     args = parser.parse_args()
-    main(args.mesh_name, 500, 2.0, 1000, .1)
+    main(args.mesh_name, 500, 2.0, args.num_nodes, args.epsilon)
 
