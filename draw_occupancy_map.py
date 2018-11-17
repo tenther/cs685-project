@@ -26,7 +26,6 @@ def main():
     # cut the mesh with a surface whose value on z-axis is plane_orig, and its normal is plane_normal vector
     #print('verts: {}'.format(verts[0]))
     cross_section = meshcut.cross_section(verts, faces, plane_orig=(0, 0, z), plane_normal=(0, 0, 1))
-    pdb.set_trace()
     for item in cross_section:
         for i in range(len(item) - 1):
             #print('item:{}', item[i, 0])
