@@ -8,6 +8,59 @@ import pdb
 import random
 import sys
 
+class PointConverter(object):
+
+    def __init__(self,
+                 min_x,
+                 max_x,
+                 min_y,
+                 max_y,
+                 px_per_meter,
+                 padding_meters,
+                 free,
+                 ):
+        self.min_x          = min_x
+        self.max_x          = max_x
+        self.min_y          = min_y
+        self.max_y          = max_y
+        self.px_per_meter   = px_per_meter
+        self.padding_meters = padding_meters
+        self.free           = free
+
+    def random_x(self):
+        return random.random() * (self.max_x - self.min_x) + self.min_x
+        
+    def random_y(self):
+        return random.random() * (self.max_y - self.min_y) + self.min_y
+
+    def x_to_pixel(self, x):
+        return int((x - self.min_x) * self.px_per_meter + self.px_per_meter * self.padding_meters / 2.0)
+
+    def y_to_pixel(self, y):
+        return int((y - self.min_y) * self.px_per_meter + self.px_per_meter * self.padding_meters / 2.0)
+
+    def point_to_pixel(self, p):
+        return self.x_to_pixel(p[0]), self.y_to_pixel(p[1])
+
+    def random_point(self, ):
+        x = self.random_x()
+        y = self.random_y()
+        return x,y
+
+    def free_point(self, x,y):
+        x_px = self.x_to_pixel(x)
+        y_px = self.x_to_pixel(y)
+        # check image boundaries due to rounding errors
+        return (x_px >= 0 and x_px < self.free.shape[1] and
+                y_px >= 0 and y_px < self.free.shape[0] and
+                self.free[y_px, x_px] == 255)
+
+    def random_free_point(self, ):
+        while True:
+            x,y = self.random_point()
+            if self.free_point(x,y):
+                return x, y
+
 def load_obj(fn):
     verts = []
     faces = []
@@ -34,7 +87,6 @@ def cross_section_bounds(cross_section, padding_meters):
             max([x[:,0].max() for x in cross_section]) + padding_meters/2.0,
             min([x[:,1].min() for x in cross_section]) - padding_meters/2.0,
             max([x[:,1].max() for x in cross_section]) + padding_meters/2.0,)
-    
 
 def make_free_space_image(cross_section_2d, px_per_meter, padding_meters):
     min_x, max_x, min_y, max_y = cross_section_bounds(cross_section_2d, padding_meters)
@@ -102,41 +154,9 @@ def line_check(p0, p1, free):
 def make_rrt(cross_section, padding_meters, px_per_meter, num_nodes, epsilon, free):
     min_x, max_x, min_y, max_y = cross_section_bounds(cross_section, padding_meters)
 
-    def random_x():
-        return random.random() * (max_x - min_x) + min_x
-        
-    def random_y():
-        return random.random() * (max_y - min_y) + min_y
+    pc = PointConverter(min_x, max_x, min_y, max_y, px_per_meter, padding_meters, free)
 
-    def x_to_pixel(x):
-        return int((x - min_x) * px_per_meter + px_per_meter * padding_meters / 2.0)
-
-    def y_to_pixel(y):
-        return int((y - min_y) * px_per_meter + px_per_meter * padding_meters / 2.0)
-
-    def point_to_pixel(p):
-        return x_to_pixel(p[0]), y_to_pixel(p[1])
-
-    def random_point():
-        x = random_x()
-        y = random_y()
-        return x,y
-
-    def free_point(x,y):
-        x_px = x_to_pixel(x)
-        y_px = x_to_pixel(y)
-        # check image boundaries due to rounding errors
-        return (x_px >= 0 and x_px < free.shape[1] and
-                y_px >= 0 and y_px < free.shape[0] and
-                free[y_px, x_px] == 255)
-
-    def random_free_point():
-        while True:
-            x,y = random_point()
-            if free_point(x,y):
-                return x, y
-
-    starting_point = random_free_point()
+    starting_point = pc.random_free_point()
     nodes_x = np.zeros(num_nodes, np.float32)
     nodes_y = np.zeros(num_nodes, np.float32)
     nodes_x[0] = starting_point[0]
@@ -147,17 +167,17 @@ def make_rrt(cross_section, padding_meters, px_per_meter, num_nodes, epsilon, fr
 
     for i in range(1, num_nodes):
         while True:
-            next_node = random_point()
+            next_node = pc.random_point()
             distances = np.sqrt(np.power(nodes_x[:i] - next_node[0], 2) + np.power(nodes_y[:i] - next_node[1], 2))
             closest_point_idx = np.argmin(distances)
             theta = math.atan2(next_node[1] - nodes_y[closest_point_idx], next_node[0] - nodes_x[closest_point_idx])
             node = (nodes_x[closest_point_idx] + np.cos(theta) * epsilon,
                     nodes_y[closest_point_idx] + np.sin(theta) * epsilon)
 
-            p0 = point_to_pixel((nodes_x[closest_point_idx], nodes_y[closest_point_idx]))
-            p1 = point_to_pixel(node)
+            p0 = pc.point_to_pixel((nodes_x[closest_point_idx], nodes_y[closest_point_idx]))
+            p1 = pc.point_to_pixel(node)
 
-            if free_point(*node) and line_check(p0, p1, free):
+            if pc.free_point(*node) and line_check(p0, p1, free):
                 nodes_x[i] = node[0]
                 nodes_y[i] = node[1]
                 edges[i-1][0] = closest_point_idx
