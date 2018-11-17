@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 import bresenham
 import cv2
 import math
@@ -30,12 +29,15 @@ def get_cross_section(verts, faces):
     cross_section = meshcut.cross_section(verts, faces, plane_orig=(0, 0, z), plane_normal=(0, 0, 1))
     return cross_section
 
-def make_free_space_image(cross_section_2d, px_per_meter, padding_meters):
-    min_x = min([x[:,0].min() for x in cross_section_2d])
-    max_x = max([x[:,0].max() for x in cross_section_2d])
+def cross_section_bounds(cross_section, padding_meters):
+    return (min([x[:,0].min() for x in cross_section]) - padding_meters/2.0,
+            max([x[:,0].max() for x in cross_section]) + padding_meters/2.0,
+            min([x[:,1].min() for x in cross_section]) - padding_meters/2.0,
+            max([x[:,1].max() for x in cross_section]) + padding_meters/2.0,)
+    
 
-    min_y = min([x[:,1].min() for x in cross_section_2d])
-    max_y = max([x[:,1].max() for x in cross_section_2d])
+def make_free_space_image(cross_section_2d, px_per_meter, padding_meters):
+    min_x, max_x, min_y, max_y = cross_section_bounds(cross_section_2d, padding_meters)
 
     image_height = int(np.ceil(px_per_meter * (max_x - min_x) + px_per_meter * padding_meters))
     image_width  = int(np.ceil(px_per_meter * (max_y - min_y) + px_per_meter * padding_meters))
@@ -97,18 +99,8 @@ def line_check(p0, p1, free):
             return False
     return True
 
-def main(mesh_file_name,px_per_meter, padding_meters, num_nodes, epsilon):
-    verts, faces = load_obj(mesh_file_name)
-    cross_section = get_cross_section(verts, faces)
-    cross_section_2d = [c[:,0:2] for c in cross_section]
-    floor_map, free = make_free_space_image(cross_section_2d, px_per_meter, padding_meters)
-
-    cv2.imwrite('free.png',free)
-
-    min_x = min([x[:,0].min() for x in cross_section_2d]) - padding_meters/2.0
-    max_x = max([x[:,0].max() for x in cross_section_2d]) + padding_meters/2.0
-    min_y = min([x[:,1].min() for x in cross_section_2d]) - padding_meters/2.0
-    max_y = max([x[:,1].max() for x in cross_section_2d]) + padding_meters/2.0
+def make_rrt(cross_section, padding_meters, px_per_meter, num_nodes, epsilon, free):
+    min_x, max_x, min_y, max_y = cross_section_bounds(cross_section, padding_meters)
 
     def random_x():
         return random.random() * (max_x - min_x) + min_x
@@ -144,7 +136,6 @@ def main(mesh_file_name,px_per_meter, padding_meters, num_nodes, epsilon):
             if free_point(x,y):
                 return x, y
 
-
     starting_point = random_free_point()
     nodes_x = np.zeros(num_nodes, np.float32)
     nodes_y = np.zeros(num_nodes, np.float32)
@@ -154,7 +145,6 @@ def main(mesh_file_name,px_per_meter, padding_meters, num_nodes, epsilon):
     edges_from_px = []
     edges_to_px = []
 
-#    pdb.set_trace()
     for i in range(1, num_nodes):
         while True:
             next_node = random_point()
@@ -176,18 +166,4 @@ def main(mesh_file_name,px_per_meter, padding_meters, num_nodes, epsilon):
                 edges_to_px.append(p1)
                 break
     
-    for i in range(len(edges_from_px)):
-        cv2.line(floor_map, edges_from_px[i], edges_to_px[i], (0, 0, 255), thickness=5)
-
-    cv2.imwrite('floormap.png',floor_map)
-    
-
-if __name__ == "__main__":    
-    import argparse
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--mesh_name', type=str, default='gibson-data/dataset/Allensville/mesh_z_up.obj')
-    parser.add_argument('-n', '--num_nodes', type=int, default=5000)
-    parser.add_argument('-e', '--epsilon', type=float, default=.1)
-    args = parser.parse_args()
-    main(args.mesh_name, 500, 2.0, args.num_nodes, args.epsilon)
-
+    return edges_from_px, edges_to_px, nodes_x, nodes_y, edges
