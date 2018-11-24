@@ -51,4 +51,4 @@ if __name__ == "__main__":
     parser.add_argument('-n', '--num_nodes', type=int, default=5000)
     parser.add_argument('-e', '--epsilon', type=float, default=.1)
     args = parser.parse_args()
-    main(args.mesh_name, 500, 2.0, args.num_nodes, args.epsilon)
+    main(args.mesh_name, 500, 0.5, args.num_nodes, args.epsilon)

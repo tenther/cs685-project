@@ -11,43 +11,51 @@ import pickle
 import random
 import rrt
 
-HeapNode = namedtuple('HeapNode', ['estimated', 'cost', 'state', 'path', 'deleted'])
+#HeapNode = namedtuple('HeapNode', ['estimated', 'cost', 'state', 'path', 'deleted'])
+
+class HeapNode(object):
+    def __init__(self, estimated, cost, state, path):
+        self.estimated = estimated
+        self.cost     = cost
+        self.state    = state
+        self.path     = path
+        self.deleted  = False
+
+    def __lt__(self, other):
+        self.estimated < other.estimated
 
 class AStarHeap(object):
     def __init__(self):
         self.heap = []
-        self.state_nodes = defaultdict(list)
+        self.state_nodes = {}
         self.size = 0
 
     def heappush(self, node):
         heapq.heappush(self.heap, node)
-        self.state_nodes[node.state].append(node)
+        self.state_nodes[node.state] = node
         self.size += 1
     
     def exists_worse(self, state, estimated):
-        for node in self.state_nodes[state]:
-            if not node.deleted and node.estimated > estimated:
-                return True
+        if state in self.state_nodes and self.state_nodes[state].estimated > estimated:
+            return True
         return False
 
     def exists(self, state):
-        for node in self.state_nodes[state]:
-            if not node.deleted:
-                return True
-        return False
+        return state in self.state_nodes
 
-    def replace_worse(self, new_node):
-        for node in self.state_nodes[new_node.state]:
-            if not node.deleted and node.estimated > new_node.estimated:
-                node.deleted = 1
-                self.size -= 1
+    def replace(self, new_node):
+        self.state_nodes[new_node.state].deleted = True
+        del(self.state_nodes[new_node.state])
+        self.size -= 1
         self.heappush(new_node)
 
     def heappop(self):
         while self.heap[0].deleted:
             heapq.heappop(self.heap)
         self.size -= 1
-        return heapq.heappop(self.heap)
+        node = heapq.heappop(self.heap)
+        del(self.state_nodes[node.state])
+        return node
 
     def getsize(self):
         return self.size
@@ -58,13 +66,13 @@ def A_star_search(start_node, goal_node, nodes_x, nodes_y, edges_idx):
         return math.sqrt((nodes_x[n0] - nodes_x[n1])**2 + (nodes_y[n0] - nodes_y[n1])**2)
 
     goal_distances = np.sqrt(np.power(nodes_x - nodes_x[goal_node], 2) + np.power(nodes_y - nodes_y[goal_node], 2))
-    edges = defaultdict(list)
+    edges = defaultdict(set)
     for i in range(len(edges_idx)):
-        edges[edges_idx[i][0]].append(edges_idx[i][1])
-        edges[edges_idx[i][1]].append(edges_idx[i][0])
+        edges[edges_idx[i][0]].add(edges_idx[i][1])
+        edges[edges_idx[i][1]].add(edges_idx[i][0])
 
     frontier = AStarHeap()
-    frontier.heappush(HeapNode(goal_distances[start_node],0,start_node, [start_node], 0))
+    frontier.heappush(HeapNode(goal_distances[start_node],0,start_node, [start_node]))
     explored = set()
 
     while True:
@@ -75,11 +83,11 @@ def A_star_search(start_node, goal_node, nodes_x, nodes_y, edges_idx):
             return node
         explored.add(node.state)
         for child in edges[node.state]:
-            newnode = HeapNode(node.cost + goal_distances[child], node.cost + node_distance(node.state, child), child, node.path + [child], 0)
+            newnode = HeapNode(node.cost + goal_distances[child], node.cost + node_distance(node.state, child), child, node.path + [child])
             if (not (newnode.state in explored or frontier.exists(newnode.state))):
                 frontier.heappush(newnode)
             elif frontier.exists_worse(newnode.state, newnode.estimated):
-                frontier.replace_worse(newnode)
+                frontier.replace(newnode)
     return None
 
 def node_closest_to_point(pc, nodes_x, nodes_y, x, y, free):
@@ -123,6 +131,7 @@ def main(dir, x0, y0, x1, y1):
     if not pc.free_point(x1, y1):
         raise("starting point ({},{}) is not free".format(x1, y1))
 
+    pdb.set_trace()
     start_node = node_closest_to_point(pc, nodes_x, nodes_y, x0, y0, free)
     goal_node  = node_closest_to_point(pc, nodes_x, nodes_y, x1, y1, free)
     solution = A_star_search(start_node, goal_node, nodes_x, nodes_y, edges_idx)

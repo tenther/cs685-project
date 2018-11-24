@@ -2,7 +2,6 @@
 # https://www.cs.helsinki.fi/group/goa/mallinnus/lines/bresenh.html
 # https://en.wikipedia.org/wiki/Bresenham's_line_algorithm
 #
-# CS685 Project
 # Paul McKerley (G00616949)
 
 def slope(p1, p2):

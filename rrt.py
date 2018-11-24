@@ -1,4 +1,5 @@
 import bresenham
+from collections import defaultdict
 import cv2
 import math
 import matplotlib.pyplot as plt
@@ -49,7 +50,7 @@ class PointConverter(object):
 
     def free_point(self, x,y):
         x_px = self.x_to_pixel(x)
-        y_px = self.x_to_pixel(y)
+        y_px = self.y_to_pixel(y)
         # check image boundaries due to rounding errors
         return (x_px >= 0 and x_px < self.free.shape[1] and
                 y_px >= 0 and y_px < self.free.shape[0] and
@@ -88,6 +89,39 @@ def cross_section_bounds(cross_section, padding_meters):
             min([x[:,1].min() for x in cross_section]) - padding_meters/2.0,
             max([x[:,1].max() for x in cross_section]) + padding_meters/2.0,)
 
+def fill_in_gaps(lines):
+
+    lines = [line for line in lines if len(line) > 1]
+    endpoints = np.array([[l[0], l[-1]]  for l in lines]).reshape((len(lines)*2, 2))
+    endpoint_equals = endpoints.reshape(endpoints.shape[0],1,2) == endpoints.reshape(1,endpoints.shape[0],2)
+    #points_with_matches = dict.fromkeys([x for x in np.argwhere(np.sum((np.sum(endpoint_equals, axis=2)==2), axis=1)==2)])
+
+    endpoint_distances = np.sqrt(np.sum(np.power((endpoints.reshape(endpoints.shape[0],1,2) - endpoints.reshape(1,endpoints.shape[0],2)), 2), axis=2))
+    #all_sorted_endpoint_indexes = np.dstack(np.unravel_index(np.argsort(endpoint_distances.ravel()), endpoint_distances.shape))
+    sorted_endpoint_indexes = np.argsort(endpoint_distances)
+
+    connections = {}
+    fix_up_lines = []
+
+    for i in range(len(lines)):
+        for j in [i * 2, i * 2 + 1]:
+            if j not in connections:
+                for p in sorted_endpoint_indexes[j]:
+                    if p != j:
+                        connections[j] = p
+                        connections[p] = j
+                        l0 = j//2
+                        idx0 = 0
+                        if j%2 == 1:
+                            idx0 = -1
+                        l1 = p//2
+                        idx1 = 0
+                        if p%2 == 1:
+                            idx1 = -1
+                        fix_up_lines.append(np.array([lines[l0][idx0], lines[l1][idx1]]))
+                        break
+    return fix_up_lines
+
 def make_free_space_image(cross_section_2d, px_per_meter, padding_meters):
     min_x, max_x, min_y, max_y = cross_section_bounds(cross_section_2d, padding_meters)
 
@@ -103,19 +137,21 @@ def make_free_space_image(cross_section_2d, px_per_meter, padding_meters):
     cv2.polylines(image, lines, False, (255, 255, 255), thickness=3)
 
     # Fill in gaps for Allensville
-    fix_up_lines = [
-        np.array([lines[0][-1], lines[2][-1]]),
-        np.array([lines[2][0], lines[4][-1]]),
-        np.array([lines[20][0], lines[20][-1]]),
-        np.array([lines[4][0], lines[6][-1]]),
-        np.array([lines[6][0], lines[7][-1]]),
-        np.array([lines[5][0], lines[7][0]]),
-        np.array([lines[8][0], lines[8][-1]]),
-        np.array([lines[16][0], lines[16][-1]]),
-        np.array([lines[10][0], lines[10][-1]]),
-        np.array([lines[19][0], lines[19][-1]]),
-        ]
-    cv2.polylines(image, fix_up_lines, False, (255, 255, 255), thickness=3)
+    # fix_up_lines = [
+    #     np.array([lines[0][-1], lines[2][-1]]),
+    #     np.array([lines[2][0], lines[4][-1]]),
+    #     np.array([lines[20][0], lines[20][-1]]),
+    #     np.array([lines[4][0], lines[6][-1]]),
+    #     np.array([lines[6][0], lines[7][-1]]),
+    #     np.array([lines[5][0], lines[7][0]]),
+    #     np.array([lines[8][0], lines[8][-1]]),
+    #     np.array([lines[16][0], lines[16][-1]]),
+    #     np.array([lines[10][0], lines[10][-1]]),
+    #     np.array([lines[19][0], lines[19][-1]]),
+    #     ]
+    cv2.imwrite('before_fill_in_gaps.png', image)
+    cv2.polylines(image, fill_in_gaps(lines), False, (255, 255, 255), thickness=3)
+    cv2.imwrite('after_fill_in_gaps.png', image)
 
     if False:
         font = cv2.FONT_HERSHEY_SIMPLEX
@@ -141,8 +177,7 @@ def make_free_space_image(cross_section_2d, px_per_meter, padding_meters):
     cv2.floodFill(gray, mask, (2000,2000), 255)
 
     kernel = np.ones((5,5),np.uint8)
-    erosion = cv2.erode(gray,kernel,iterations = 3)
-
+    erosion = cv2.erode(gray,kernel,iterations = 30)
     return image, erosion
 
 def line_check(p0, p1, free):
@@ -152,6 +187,7 @@ def line_check(p0, p1, free):
     return True
 
 def make_rrt(cross_section, padding_meters, px_per_meter, num_nodes, epsilon, free):
+#    pdb.set_trace()
     min_x, max_x, min_y, max_y = cross_section_bounds(cross_section, padding_meters)
 
     pc = PointConverter(min_x, max_x, min_y, max_y, px_per_meter, padding_meters, free)
@@ -166,6 +202,8 @@ def make_rrt(cross_section, padding_meters, px_per_meter, num_nodes, epsilon, fr
     edges_to_px = []
 
     for i in range(1, num_nodes):
+        if i%1000 == 0:
+            print("{}/{}".format(i, num_nodes))
         while True:
             next_node = pc.random_point()
             distances = np.sqrt(np.power(nodes_x[:i] - next_node[0], 2) + np.power(nodes_y[:i] - next_node[1], 2))
@@ -185,5 +223,31 @@ def make_rrt(cross_section, padding_meters, px_per_meter, num_nodes, epsilon, fr
                 edges_from_px.append(p0)
                 edges_to_px.append(p1)
                 break
+
+    # Connect leaf nodes to closest points
+    leaf_index = np.setdiff1d(edges[:,1], edges[:,0])
+    leaf_nodes = np.stack((nodes_x[leaf_index], nodes_y[leaf_index]), axis=1)
+    distances = np.sqrt(np.sum(np.power((leaf_nodes.reshape(leaf_nodes.shape[0],1,2) -
+                                         leaf_nodes.reshape(1,leaf_nodes.shape[0],2)), 2), axis=2))
+    #all_sorted_endpoint_indexes = np.dstack(np.unravel_index(np.argsort(endpoint_distances.ravel()), endpoint_distances.shape))
+    sorted_endpoint_indexes = np.argsort(distances)
+    
+#    pdb.set_trace()
+    new_edges = defaultdict(set)
+    for i in range(len(leaf_nodes)):
+        node0_idx = leaf_index[i]
+        p0 = pc.point_to_pixel((nodes_x[node0_idx], nodes_y[node0_idx]))
+        for j in list(sorted_endpoint_indexes[i,1:]):
+            node1_idx = leaf_index[j]
+            if node1_idx not in new_edges[node0_idx]:
+                p1 = pc.point_to_pixel((nodes_x[node1_idx], nodes_y[node1_idx]))
+                if line_check(p0, p1, free):
+                    new_edges[node0_idx].add(node1_idx)
+                    new_edges[node1_idx].add(node0_idx)
+                    edges_from_px.append(pc.point_to_pixel((nodes_x[node0_idx], nodes_y[node0_idx])))
+                    edges_to_px.append(pc.point_to_pixel((nodes_x[node1_idx], nodes_y[node1_idx])))
+                    break
+    new_edge_array = np.array([[i, j] for i in new_edges for j in new_edges[i]])
+    edges = np.vstack((edges, new_edge_array))
     
     return edges_from_px, edges_to_px, nodes_x, nodes_y, edges
