@@ -3,6 +3,7 @@ import rrt
 import cv2
 import numpy as np
 import os
+import pdb
 import pickle
 
 def main(mesh_file_name, px_per_meter, padding_meters, num_nodes, epsilon):
@@ -13,11 +14,15 @@ def main(mesh_file_name, px_per_meter, padding_meters, num_nodes, epsilon):
     cross_section_2d = [c[:,0:2] for c in cross_section]
 
     floor_map, free = rrt.make_free_space_image(cross_section_2d, px_per_meter, padding_meters)
+    floor_map_white = floor_map==255
+    floor_map_black = floor_map==0
+    floor_map[floor_map_white] = 0
+    floor_map[floor_map_black] = 255
 
     edges_from_px, edges_to_px, nodes_x, nodes_y, edges = rrt.make_rrt(cross_section_2d, padding_meters, px_per_meter, num_nodes, epsilon, free)
 
     for i in range(len(edges_from_px)):
-        cv2.line(floor_map, edges_from_px[i], edges_to_px[i], (0, 0, 255), thickness=5)
+        cv2.line(floor_map, edges_from_px[i], edges_to_px[i], (255, 0, 0), thickness=5)
 
     min_x, max_x, min_y, max_y = rrt.cross_section_bounds(cross_section_2d, padding_meters)
 

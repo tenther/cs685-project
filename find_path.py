@@ -60,12 +60,8 @@ class AStarHeap(object):
     def getsize(self):
         return self.size
 
-def A_star_search(start_node, goal_node, nodes_x, nodes_y, edges_idx):
+def A_star_search(start_node, goal_node, distance_func, goal_distances, edges_idx):
 
-    def node_distance(n0, n1):
-        return math.sqrt((nodes_x[n0] - nodes_x[n1])**2 + (nodes_y[n0] - nodes_y[n1])**2)
-
-    goal_distances = np.sqrt(np.power(nodes_x - nodes_x[goal_node], 2) + np.power(nodes_y - nodes_y[goal_node], 2))
     edges = defaultdict(set)
     for i in range(len(edges_idx)):
         edges[edges_idx[i][0]].add(edges_idx[i][1])
@@ -83,7 +79,7 @@ def A_star_search(start_node, goal_node, nodes_x, nodes_y, edges_idx):
             return node
         explored.add(node.state)
         for child in edges[node.state]:
-            newnode = HeapNode(node.cost + goal_distances[child], node.cost + node_distance(node.state, child), child, node.path + [child])
+            newnode = HeapNode(node.cost + goal_distances[child], node.cost + distance_func(node.state, child), child, node.path + [child])
             if (not (newnode.state in explored or frontier.exists(newnode.state))):
                 frontier.heappush(newnode)
             elif frontier.exists_worse(newnode.state, newnode.estimated):
@@ -140,7 +136,12 @@ class PathFinder(object):
 
         start_node = self.node_closest_to_point(x0, y0)
         goal_node  = self.node_closest_to_point(x1, y1)
-        solution = A_star_search(start_node, goal_node, nodes_x, nodes_y, self.edges_idx)
+        goal_distances = np.sqrt(np.power(nodes_x - nodes_x[goal_node], 2) + np.power(nodes_y - nodes_y[goal_node], 2))
+
+        def node_distance(n0, n1):
+            return math.sqrt((nodes_x[n0] - nodes_x[n1])**2 + (nodes_y[n0] - nodes_y[n1])**2)
+
+        solution = A_star_search(start_node, goal_node, node_distance, goal_distances, self.edges_idx)
 
         lines =  [np.array([pc.y_to_pixel(y0), pc.x_to_pixel(x0)])]
         lines += [np.array([pc.y_to_pixel([nodes_y[node]]), pc.x_to_pixel(nodes_x[node])]) for node in solution.path]
@@ -176,10 +177,10 @@ def main(directory, x0, y0, x1, y1):
 
         floormap_with_path_file_name = os.path.join(directory, 'floormap_with_path.png')
         for i in range(len(lines) - 1):
-            cv2.line(floormap, (lines[i][1], lines[i][0]), (lines[i+1][1], lines[i+1][0]), (0,255,0), 5)
+            cv2.line(floormap, (lines[i][1], lines[i][0]), (lines[i+1][1], lines[i+1][0]), (0,0,255), 10)
 
-        cv2.circle(floormap, tuple([lines[0][1], lines[0][0]]),  50, (0, 255, 0), thickness=10)
-        cv2.circle(floormap, tuple([lines[-1][1], lines[-1][0]]),50, (255, 0, 0), thickness=10)
+        cv2.circle(floormap, tuple([lines[0][1], lines[0][0]]),  50, (0, 255, 0), thickness=30)
+        cv2.circle(floormap, tuple([lines[-1][1], lines[-1][0]]),50, (0, 0, 255), thickness=30)
         cv2.imwrite(floormap_with_path_file_name, floormap)
     else:
         print("No path found")

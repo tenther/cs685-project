@@ -232,22 +232,23 @@ def make_rrt(cross_section, padding_meters, px_per_meter, num_nodes, epsilon, fr
     #all_sorted_endpoint_indexes = np.dstack(np.unravel_index(np.argsort(endpoint_distances.ravel()), endpoint_distances.shape))
     sorted_endpoint_indexes = np.argsort(distances)
     
-#    pdb.set_trace()
-    new_edges = defaultdict(set)
-    for i in range(len(leaf_nodes)):
-        node0_idx = leaf_index[i]
-        p0 = pc.point_to_pixel((nodes_x[node0_idx], nodes_y[node0_idx]))
-        for j in list(sorted_endpoint_indexes[i,1:]):
-            node1_idx = leaf_index[j]
-            if node1_idx not in new_edges[node0_idx]:
-                p1 = pc.point_to_pixel((nodes_x[node1_idx], nodes_y[node1_idx]))
-                if line_check(p0, p1, free):
-                    new_edges[node0_idx].add(node1_idx)
-                    new_edges[node1_idx].add(node0_idx)
-                    edges_from_px.append(pc.point_to_pixel((nodes_x[node0_idx], nodes_y[node0_idx])))
-                    edges_to_px.append(pc.point_to_pixel((nodes_x[node1_idx], nodes_y[node1_idx])))
-                    break
-    new_edge_array = np.array([[i, j] for i in new_edges for j in new_edges[i]])
-    edges = np.vstack((edges, new_edge_array))
+    connect_leaves = False
+    if connect_leaves:
+        new_edges = defaultdict(set)
+        for i in range(len(leaf_nodes)):
+            node0_idx = leaf_index[i]
+            p0 = pc.point_to_pixel((nodes_x[node0_idx], nodes_y[node0_idx]))
+            for j in list(sorted_endpoint_indexes[i,1:]):
+                node1_idx = leaf_index[j]
+                if node1_idx not in new_edges[node0_idx]:
+                    p1 = pc.point_to_pixel((nodes_x[node1_idx], nodes_y[node1_idx]))
+                    if line_check(p0, p1, free):
+                        new_edges[node0_idx].add(node1_idx)
+                        new_edges[node1_idx].add(node0_idx)
+                        edges_from_px.append(pc.point_to_pixel((nodes_x[node0_idx], nodes_y[node0_idx])))
+                        edges_to_px.append(pc.point_to_pixel((nodes_x[node1_idx], nodes_y[node1_idx])))
+                        break
+        new_edge_array = np.array([[i, j] for i in new_edges for j in new_edges[i]])
+        edges = np.vstack((edges, new_edge_array))
     
     return edges_from_px, edges_to_px, nodes_x, nodes_y, edges
