@@ -90,57 +90,91 @@ def A_star_search(start_node, goal_node, nodes_x, nodes_y, edges_idx):
                 frontier.replace(newnode)
     return None
 
-def node_closest_to_point(pc, nodes_x, nodes_y, x, y, free):
-    distances = np.argsort(np.sqrt(np.power(nodes_x - x, 2) + np.power(nodes_y - y, 2)))
-    node = None
-    for i in range(distances.shape[0]):
-        j = distances[i]
-        if rrt.line_check(pc.point_to_pixel((nodes_x[j], nodes_y[j])), pc.point_to_pixel((x, y)), free):
-            node = j
-            break
-    if not node:
-        raise Exception("Could not find a clear path from ({},{}) to a node".format(x,y))
-    return node
 
-def main(dir, x0, y0, x1, y1):
-    floormap_file_name = os.path.join(dir, 'floormap.png')
-    rrt_file_name = os.path.join(dir, 'rrt.npz')
-    config_file_name = os.path.join(dir, 'config.pickle')
+class PathFinder(object):
+    def __init__(self, directory):
+        self.dir            = directory
+        self.nodes_x        = None
+        self.nodes_y        = None
+        self.edges_idx      = None
+        self.free           = None
+        self.config         = None
+        self.min_x          = None
+        self.max_x          = None
+        self.min_y          = None
+        self.max_y          = None
+        self.px_per_meter   = None
+        self.padding_meters = None
+        self.pc             = None
 
-    floormap  = cv2.imread(floormap_file_name)
-    npfile    = np.load(rrt_file_name)
-    nodes_x   = npfile['arr_0']
-    nodes_y   = npfile['arr_1']
-    edges_idx = npfile['arr_2']
-    free      = npfile['arr_3']
+    def load(self):
+        rrt_file_name = os.path.join(self.dir, 'rrt.npz')
+        config_file_name = os.path.join(self.dir, 'config.pickle')
 
-    with open(config_file_name, 'rb') as config_file:
-        config = pickle.load(config_file)
-    min_x = config['min_x']
-    max_x = config['max_x']
-    min_y = config['min_y']
-    max_y = config['max_y']
-    px_per_meter = config['px_per_meter']
-    padding_meters = config['padding_meters']
+        npfile         = np.load(rrt_file_name)
+        self.nodes_x   = npfile['arr_0']
+        self.nodes_y   = npfile['arr_1']
+        self.edges_idx = npfile['arr_2']
+        self.free      = npfile['arr_3']
 
-    pc = rrt.PointConverter(min_x, max_x, min_y, max_y, px_per_meter, padding_meters, free)
+        with open(config_file_name, 'rb') as config_file:
+            self.config = pickle.load(config_file)
+        self.min_x = self.config['min_x']
+        self.max_x = self.config['max_x']
+        self.min_y = self.config['min_y']
+        self.max_y = self.config['max_y']
+        self.px_per_meter = self.config['px_per_meter']
+        self.padding_meters = self.config['padding_meters']
+        self.pc = rrt.PointConverter(self.min_x, self.max_x, self.min_y, self.max_y, self.px_per_meter, self.padding_meters, self.free)
 
-    if not pc.free_point(x0, y0):
-        raise("starting point ({},{}) is not free".format(x0, y0))
+    def find(self, x0, y0, x1, y1):
+        pc = self.pc
+        nodes_x = self.nodes_x
+        nodes_y = self.nodes_y
 
-    if not pc.free_point(x1, y1):
-        raise("starting point ({},{}) is not free".format(x1, y1))
+        if not pc.free_point(x0, y0):
+            raise("starting point ({},{}) is not free".format(x0, y0))
 
-    pdb.set_trace()
-    start_node = node_closest_to_point(pc, nodes_x, nodes_y, x0, y0, free)
-    goal_node  = node_closest_to_point(pc, nodes_x, nodes_y, x1, y1, free)
-    solution = A_star_search(start_node, goal_node, nodes_x, nodes_y, edges_idx)
-    
-    floormap_with_path_file_name = os.path.join(dir, 'floormap_with_path.png')
-    if solution:
+        if not pc.free_point(x1, y1):
+            raise("starting point ({},{}) is not free".format(x1, y1))
+
+        start_node = self.node_closest_to_point(x0, y0)
+        goal_node  = self.node_closest_to_point(x1, y1)
+        solution = A_star_search(start_node, goal_node, nodes_x, nodes_y, self.edges_idx)
+
         lines =  [np.array([pc.y_to_pixel(y0), pc.x_to_pixel(x0)])]
         lines += [np.array([pc.y_to_pixel([nodes_y[node]]), pc.x_to_pixel(nodes_x[node])]) for node in solution.path]
         lines += [np.array([pc.y_to_pixel(y1), pc.x_to_pixel(x1)])]
+
+        return solution, lines
+
+    def node_closest_to_point(self, x, y):
+        distances = np.argsort(np.sqrt(np.power(self.nodes_x - x, 2) + np.power(self.nodes_y - y, 2)))
+        node = None
+        for i in range(distances.shape[0]):
+            j = distances[i]
+            if rrt.line_check(self.pc.point_to_pixel((self.nodes_x[j], self.nodes_y[j])), self.pc.point_to_pixel((x, y)), self.free):
+                node = j
+                break
+        if not node:
+            raise Exception("Could not find a clear path from ({},{}) to a node".format(x,y))
+        return node
+
+def main(directory, x0, y0, x1, y1):
+
+    path_finder = PathFinder(directory)
+    print("Loading...")
+    path_finder.load()
+    pc = path_finder.pc
+    print("Finding...")
+    solution, lines = path_finder.find(x0, y0, x1, y1)
+    
+    if solution:
+        print("Writing solution...")
+        floormap_file_name = os.path.join(directory, 'floormap.png')
+        floormap  = cv2.imread(floormap_file_name)
+
+        floormap_with_path_file_name = os.path.join(directory, 'floormap_with_path.png')
         for i in range(len(lines) - 1):
             cv2.line(floormap, (lines[i][1], lines[i][0]), (lines[i+1][1], lines[i+1][0]), (0,255,0), 5)
 
@@ -149,8 +183,6 @@ def main(dir, x0, y0, x1, y1):
         cv2.imwrite(floormap_with_path_file_name, floormap)
     else:
         print("No path found")
-        if os.path.exists(floormap_with_path_file_name):
-            os.unlink(floormap_with_path_file_name)
 
 if __name__ == "__main__":    
     import argparse
