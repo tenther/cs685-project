@@ -11,8 +11,6 @@ import pickle
 import random
 import rrt
 
-#HeapNode = namedtuple('HeapNode', ['estimated', 'cost', 'state', 'path', 'deleted'])
-
 class HeapNode(object):
     def __init__(self, estimated, cost, state, path):
         self.estimated = estimated
@@ -60,13 +58,7 @@ class AStarHeap(object):
     def getsize(self):
         return self.size
 
-def A_star_search(start_node, goal_node, distance_func, goal_distances, edges_idx):
-
-    edges = defaultdict(set)
-    for i in range(len(edges_idx)):
-        edges[edges_idx[i][0]].add(edges_idx[i][1])
-        edges[edges_idx[i][1]].add(edges_idx[i][0])
-
+def A_star_search(start_node, goal_node, goal_distances, edges):
     frontier = AStarHeap()
     frontier.heappush(HeapNode(goal_distances[start_node],0,start_node, [start_node]))
     explored = set()
@@ -78,8 +70,8 @@ def A_star_search(start_node, goal_node, distance_func, goal_distances, edges_id
         if node.state == goal_node:
             return node
         explored.add(node.state)
-        for child in edges[node.state]:
-            newnode = HeapNode(node.cost + goal_distances[child], node.cost + distance_func(node.state, child), child, node.path + [child])
+        for child in edges[node.state].keys():
+            newnode = HeapNode(node.cost + goal_distances[child], node.cost + edges[node.state][child], child, node.path + [child])
             if (not (newnode.state in explored or frontier.exists(newnode.state))):
                 frontier.heappush(newnode)
             elif frontier.exists_worse(newnode.state, newnode.estimated):
@@ -123,31 +115,44 @@ class PathFinder(object):
         self.padding_meters = self.config['padding_meters']
         self.pc = rrt.PointConverter(self.min_x, self.max_x, self.min_y, self.max_y, self.px_per_meter, self.padding_meters, self.free)
 
-    def find(self, x0, y0, x1, y1):
-        pc = self.pc
+        edges = defaultdict(dict)
+        edges_idx = self.edges_idx
         nodes_x = self.nodes_x
         nodes_y = self.nodes_y
+        for i in range(len(edges_idx)):
+            n0 = edges_idx[i][0]
+            n1 = edges_idx[i][1]
+            distance = math.sqrt((nodes_x[n0] - nodes_x[n1])**2 + (nodes_y[n0] - nodes_y[n1])**2)
+            edges[n0][n1] = distance
+            edges[n1][n0] = distance
+        self.edges = edges
 
-        if not pc.free_point(x0, y0):
-            raise("starting point ({},{}) is not free".format(x0, y0))
+    def find(self, x0, y0, x1, y1):
+        try:
+            pc = self.pc
+            nodes_x = self.nodes_x
+            nodes_y = self.nodes_y
 
-        if not pc.free_point(x1, y1):
-            raise("starting point ({},{}) is not free".format(x1, y1))
+            if not pc.free_point(x0, y0):
+                raise("starting point ({},{}) is not free".format(x0, y0))
 
-        start_node = self.node_closest_to_point(x0, y0)
-        goal_node  = self.node_closest_to_point(x1, y1)
-        goal_distances = np.sqrt(np.power(nodes_x - nodes_x[goal_node], 2) + np.power(nodes_y - nodes_y[goal_node], 2))
+            if not pc.free_point(x1, y1):
+                raise("starting point ({},{}) is not free".format(x1, y1))
 
-        def node_distance(n0, n1):
-            return math.sqrt((nodes_x[n0] - nodes_x[n1])**2 + (nodes_y[n0] - nodes_y[n1])**2)
+            start_node = self.node_closest_to_point(x0, y0)
+            goal_node  = self.node_closest_to_point(x1, y1)
+            goal_distances = np.sqrt(np.power(nodes_x - nodes_x[goal_node], 2) + np.power(nodes_y - nodes_y[goal_node], 2))
 
-        solution = A_star_search(start_node, goal_node, node_distance, goal_distances, self.edges_idx)
+            solution = A_star_search(start_node, goal_node, goal_distances, self.edges)
 
-        lines =  [np.array([pc.y_to_pixel(y0), pc.x_to_pixel(x0)])]
-        lines += [np.array([pc.y_to_pixel([nodes_y[node]]), pc.x_to_pixel(nodes_x[node])]) for node in solution.path]
-        lines += [np.array([pc.y_to_pixel(y1), pc.x_to_pixel(x1)])]
+            lines =  [np.array([pc.y_to_pixel(y0), pc.x_to_pixel(x0)])]
+            lines += [np.array([pc.y_to_pixel([nodes_y[node]]), pc.x_to_pixel(nodes_x[node])]) for node in solution.path]
+            lines += [np.array([pc.y_to_pixel(y1), pc.x_to_pixel(x1)])]
 
-        return solution, lines
+            return solution, lines
+        except Exception as e:
+            print(e)
+            return None, None
 
     def node_closest_to_point(self, x, y):
         distances = np.argsort(np.sqrt(np.power(self.nodes_x - x, 2) + np.power(self.nodes_y - y, 2)))
