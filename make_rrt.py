@@ -1,28 +1,42 @@
 #!/usr/bin/env python
-import rrt
 import cv2
 import numpy as np
 import os
-import pdb
 import pickle
 
-def main(mesh_file_name, px_per_meter, padding_meters, num_nodes, epsilon):
+import rrt
+
+def main(mesh_file_name, px_per_meter,
+         padding_meters, num_nodes,
+         epsilon, extend_lines,
+         crossing_paths, erosion_iterations):
+
     verts, faces = rrt.load_obj(mesh_file_name)
 
     cross_section = rrt.get_cross_section(verts, faces)
 
-    cross_section_2d = [c[:,0:2] for c in cross_section]
+    cross_section_2d = [c[:, 0:2] for c in cross_section]
 
-    floor_map, free = rrt.make_free_space_image(cross_section_2d, px_per_meter, padding_meters)
-    floor_map_white = floor_map==255
-    floor_map_black = floor_map==0
+    floor_map, free = rrt.make_free_space_image(cross_section_2d, px_per_meter,
+                                                padding_meters,
+                                                erosion_iterations=erosion_iterations)
+    floor_map_white = (floor_map == 255)
+    floor_map_black = (floor_map == 0)
     floor_map[floor_map_white] = 0
     floor_map[floor_map_black] = 255
 
-    edges_from_px, edges_to_px, nodes_x, nodes_y, edges = rrt.make_rrt(cross_section_2d, padding_meters, px_per_meter, num_nodes, epsilon, free)
+    edges_from_px, edges_to_px, nodes_x, nodes_y, edges = rrt.make_rrt(cross_section_2d,
+                                                                       padding_meters,
+                                                                       px_per_meter,
+                                                                       num_nodes,
+                                                                       epsilon,
+                                                                       free,
+                                                                       extend_lines,
+                                                                       crossing_paths,
+                                                                       )
 
-    for i in range(len(edges_from_px)):
-        cv2.line(floor_map, edges_from_px[i], edges_to_px[i], (255, 0, 0), thickness=5)
+    for i, edge_from_px in enumerate(edges_from_px):
+        cv2.line(floor_map, edge_from_px, edges_to_px[i], (255, 0, 0), thickness=5)
 
     min_x, max_x, min_y, max_y = rrt.cross_section_bounds(cross_section_2d, padding_meters)
 
@@ -34,7 +48,7 @@ def main(mesh_file_name, px_per_meter, padding_meters, num_nodes, epsilon):
 
     cv2.imwrite(floormap_file_name, floor_map)
     print("Wrote {}".format(floormap_file_name))
-    np.savez(rrt_file_name, nodes_x, nodes_y, edges, free)
+    np.savez(rrt_file_name, nodes_x, nodes_y, edges, free, *cross_section_2d)
     print("Wrote {}".format(rrt_file_name))
     with open(config_file_name, 'wb') as config_file:
         pickle.dump({
@@ -49,11 +63,18 @@ def main(mesh_file_name, px_per_meter, padding_meters, num_nodes, epsilon):
     cv2.imwrite(free_file_name, free)
     print("Wrote {}".format(free_file_name))
 
-if __name__ == "__main__":    
+if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--mesh_name', type=str, default='gibson-data/dataset/Allensville/mesh_z_up.obj')
+    parser.add_argument('--mesh_name', type=str,
+                        default='gibson-data/dataset/Allensville/mesh_z_up.obj')
     parser.add_argument('-n', '--num_nodes', type=int, default=5000)
+    parser.add_argument('-i', '--erosion_iterations', type=int, default=5)
     parser.add_argument('-e', '--epsilon', type=float, default=.1)
+    parser.add_argument('-l', '--extend_lines', default=False, action="store_true")
+    parser.add_argument('-x', '--no_crossing_paths', default=False, action="store_true")
     args = parser.parse_args()
-    main(args.mesh_name, 500, 0.5, args.num_nodes, args.epsilon)
+    main(args.mesh_name, 500,
+         0.5, args.num_nodes,
+         args.epsilon, args.extend_lines,
+         not args.no_crossing_paths, args.erosion_iterations)
