@@ -28,7 +28,9 @@ class RrtDisplay:
 
     def draw_map(self, da, ctx):
         ctx.set_source_rgb(1,1,1)
-        ctx.rectangle(0,0,self.width,self.height)
+        # width, height = ctx.get_size()
+        ctx.rectangle(0,0,da.get_allocated_width(), da.get_allocated_height())
+#        ctx.rectangle(0, 0, self.width, self.height)
         ctx.fill()
         ctx.set_source_rgb(0, 0, 0)
         ctx.set_line_width(1)
@@ -84,7 +86,6 @@ class RrtDisplay:
         return 
 
 def main(directory, scale, x0, y0, x1, y1):
-#    pdb.set_trace()
     pf = rrt.PathFinder(directory)
     pf.load()
     bounds = pf.get_bounds()

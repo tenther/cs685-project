@@ -20,10 +20,6 @@ def main(mesh_file_name, px_per_meter,
     floor_map, free = rrt.make_free_space_image(cross_section_2d, px_per_meter,
                                                 padding_meters,
                                                 erosion_iterations=erosion_iterations)
-    floor_map_white = (floor_map == 255)
-    floor_map_black = (floor_map == 0)
-    floor_map[floor_map_white] = 0
-    floor_map[floor_map_black] = 255
 
     edges_from_px, edges_to_px, nodes_x, nodes_y, edges = rrt.make_rrt(cross_section_2d,
                                                                        padding_meters,
@@ -34,6 +30,11 @@ def main(mesh_file_name, px_per_meter,
                                                                        extend_lines,
                                                                        crossing_paths,
                                                                        )
+
+    floor_map_white = (floor_map == 255)
+    floor_map_black = (floor_map == 0)
+    floor_map[floor_map_white] = 0
+    floor_map[floor_map_black] = 255
 
     for i, edge_from_px in enumerate(edges_from_px):
         cv2.line(floor_map, edge_from_px, edges_to_px[i], (255, 0, 0), thickness=5)

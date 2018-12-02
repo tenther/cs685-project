@@ -101,7 +101,6 @@ def cross_section_bounds(cross_section, padding_meters):
             max([x[:, 1].max() for x in cross_section]) + padding_meters/2.0,)
 
 def fill_in_gaps(lines):
-
     lines = [line for line in lines if len(line) > 1]
     endpoints = np.array([[l[0], l[-1]]  for l in lines]).reshape((len(lines)*2, 2))
 
@@ -266,21 +265,6 @@ def make_rrt(cross_section,
                 if not extend_line or i == num_nodes:
                     break
             else:
-                # if False:
-                #     target_width = 1000
-                #     _, width = free.shape
-                #     image_scale = target_width/width
-                #     new_x, new_y = (free.shape[1]*image_scale,
-                #                     free.shape[0]*image_scale)
-                #     new_free = cv2.resize(free, (int(new_x), int(new_y)))
-                #     cv2.imshow('free', new_free)
-                #     while True:
-                #         # wait for "q"
-                #         key = cv2.waitKey(0)
-                #         print("Key = {}".format(key))
-                #         if key == 113:
-                #             cv2.destroyAllWindows()
-                #             break
                 misses += 1
                 if misses%1000 == 0:
                     print("misses {}".format(misses))
@@ -404,25 +388,41 @@ def A_star_search(start_node, goal_node, goal_distances, edges):
                 frontier.replace(newnode)
     return None
 
-
 class PathFinder:
     """Finds path in RRT using A* search."""
-    def __init__(self, directory):
+    def __init__(
+            self,
+            directory,
+            nodes_x = None,
+            nodes_y = None,
+            edges_idx = None,
+            free = None,
+            config = None,
+            min_x = None,
+            max_x = None,
+            min_y = None,
+            max_y = None,
+            px_per_meter = None,
+            padding_meters = None,
+            pc = None,
+            cross_section_2d = None,
+            edges = None,
+            ):
         self.dir = directory
-        self.nodes_x = None
-        self.nodes_y = None
-        self.edges_idx = None
-        self.free = None
-        self.config = None
-        self.min_x = None
-        self.max_x = None
-        self.min_y = None
-        self.max_y = None
-        self.px_per_meter = None
-        self.padding_meters = None
-        self.pc = None
-        self.cross_section_2d = None
-        self.edges = None
+        self.nodes_x = nodes_x
+        self.nodes_y = nodes_y
+        self.edges_idx = edges_idx
+        self.free = free
+        self.config = config
+        self.min_x = min_x
+        self.max_x = max_x
+        self.min_y = min_y
+        self.max_y = max_y
+        self.px_per_meter = px_per_meter
+        self.padding_meters = padding_meters
+        self.pc = pc
+        self.cross_section_2d = cross_section_2d
+        self.edges = edges
 
     def load(self):
         rrt_file_name = os.path.join(self.dir, 'rrt.npz')
