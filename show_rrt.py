@@ -11,35 +11,60 @@ import pdb
 import rrt
 
 def draw(da, ctx, *args):
-    pf, width, height, scale = args
+    pf, solution, width, height, scale = args
 
     ctx.set_source_rgb(1,1,1)
     ctx.rectangle(0,0,width,height)
     ctx.fill()
-    ctx.set_source_rgb(0, 0, 1.0)
+    ctx.set_source_rgb(0, 0, 0)
     ctx.set_line_width(1)
 #    ctx.set_tolerance(0.1)
     ctx.set_line_join(cairo.LINE_JOIN_ROUND)
 
     p2p = pf.pc.scaled_point_to_pixel
+    x2px = pf.pc.x_to_pixel
+    y2px = pf.pc.y_to_pixel
 
     ctx.save()
     for idx, line in enumerate(pf.cross_section_2d):
-#        if line.shape[0] > 1:
-            line = [p2p((x[0], x[1]), scale) for x in line]
-            ctx.new_path()
-            ctx.move_to(line[0][0], line[0][1])
-            for p in line[1:]:
-                ctx.line_to(p[0], p[1])
-            ctx.stroke()
+        line = [p2p((x[0], x[1]), scale) for x in line]
+        ctx.new_path()
+        ctx.move_to(line[0][0], line[0][1])
+        for p in line[1:]:
+            ctx.line_to(p[0], p[1])
+        ctx.stroke()
+
+    node_x = [x2px(x)*scale for x in pf.nodes_x]
+    node_y = [y2px(y)*scale for y in pf.nodes_y]
+
+    ctx.set_source_rgb(0, 0, 1.0)
+    for src, dst in pf.edges_idx:
+        ctx.new_path()
+        ctx.move_to(node_x[src], node_y[src])
+        ctx.line_to(node_x[dst], node_y[dst])
+        ctx.stroke()
+
+    if solution:
+        ctx.set_source_rgb(1.0, 0, 0)
+        px_path = []
+        for node in solution.path:
+            p = (node_x[node], node_y[node])
+            px_path.append(p)
+        ctx.new_path()
+        ctx.move_to(px_path[0][0], px_path[0][1])
+        for p in px_path[1:]:
+            ctx.line_to(p[0], p[1])
+        ctx.stroke()
+
     ctx.restore()
     return 
 
-def main(directory, scale):
+def main(directory, scale, x0, y0, x1, y1):
 #    pdb.set_trace()
     pf = rrt.PathFinder(directory)
     pf.load()
     bounds = pf.get_bounds()
+    solution, path_lines = pf.find(x0, y0, x1, y1)
 
     win = Gtk.Window()
     win.connect('destroy', Gtk.main_quit)
@@ -49,7 +74,7 @@ def main(directory, scale):
 
     drawingarea = Gtk.DrawingArea()
     win.add(drawingarea)
-    drawingarea.connect('draw', draw, pf, width, height, scale)
+    drawingarea.connect('draw', draw, pf, solution, width, height, scale)
     win.show_all()
     Gtk.main()
 

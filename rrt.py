@@ -334,6 +334,8 @@ class HeapNode:
         self.state = state
         self.path = path
         self.deleted = False
+        self.start_node = None
+        self.goal_node = None
 
     def __lt__(self, other):
         return self.estimated < other.estimated
@@ -385,6 +387,8 @@ def A_star_search(start_node, goal_node, goal_distances, edges):
             return None
         node = frontier.heappop()
         if node.state == goal_node:
+            node.start_node = start_node
+            node.goal_node = goal_node
             return node
         explored.add(node.state)
         for child in edges[node.state].keys():
