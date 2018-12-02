@@ -10,44 +10,56 @@ import pdb
 
 import rrt
 
-def draw(da, ctx, *args):
-    pf, solution, width, height, scale = args
+class RrtDisplay:
+    def __init__(self,
+                 drawing_area,
+                 path_finder,
+                 width,
+                 height,
+                 scale,
+                 solution=None
+                ):
+        self.da = drawing_area
+        self.pf = path_finder
+        self.width = width
+        self.height = height
+        self.scale = scale
+        self.solution = solution
 
-    ctx.set_source_rgb(1,1,1)
-    ctx.rectangle(0,0,width,height)
-    ctx.fill()
-    ctx.set_source_rgb(0, 0, 0)
-    ctx.set_line_width(1)
-#    ctx.set_tolerance(0.1)
-    ctx.set_line_join(cairo.LINE_JOIN_ROUND)
+    def draw_map(self, da, ctx):
+        ctx.set_source_rgb(1,1,1)
+        ctx.rectangle(0,0,self.width,self.height)
+        ctx.fill()
+        ctx.set_source_rgb(0, 0, 0)
+        ctx.set_line_width(1)
+        ctx.set_line_join(cairo.LINE_JOIN_ROUND)
 
-    p2p = pf.pc.scaled_point_to_pixel
-    x2px = pf.pc.x_to_pixel
-    y2px = pf.pc.y_to_pixel
+        p2p = self.pf.pc.scaled_point_to_pixel
 
-    ctx.save()
-    for idx, line in enumerate(pf.cross_section_2d):
-        line = [p2p((x[0], x[1]), scale) for x in line]
-        ctx.new_path()
-        ctx.move_to(line[0][0], line[0][1])
-        for p in line[1:]:
-            ctx.line_to(p[0], p[1])
-        ctx.stroke()
+        for idx, line in enumerate(self.pf.cross_section_2d):
+            line = [p2p((x[0], x[1]), self.scale) for x in line]
+            ctx.new_path()
+            ctx.move_to(line[0][0], line[0][1])
+            for p in line[1:]:
+                ctx.line_to(p[0], p[1])
+            ctx.stroke()
 
-    node_x = [x2px(x)*scale for x in pf.nodes_x]
-    node_y = [y2px(y)*scale for y in pf.nodes_y]
+    def draw_rrt(self, da, ctx):
+        node_x = self.node_x
+        node_y = self.node_y
+        ctx.set_source_rgb(0, 0, 1.0)
+        for src, dst in self.pf.edges_idx:
+            ctx.new_path()
+            ctx.move_to(node_x[src], node_y[src])
+            ctx.line_to(node_x[dst], node_y[dst])
+            ctx.stroke()
 
-    ctx.set_source_rgb(0, 0, 1.0)
-    for src, dst in pf.edges_idx:
-        ctx.new_path()
-        ctx.move_to(node_x[src], node_y[src])
-        ctx.line_to(node_x[dst], node_y[dst])
-        ctx.stroke()
-
-    if solution:
+    def draw_solution(self, da, ctx):
         ctx.set_source_rgb(1.0, 0, 0)
         px_path = []
-        for node in solution.path:
+        node_x = self.node_x
+        node_y = self.node_y
+        for node in self.solution.path:
             p = (node_x[node], node_y[node])
             px_path.append(p)
         ctx.new_path()
@@ -56,8 +68,20 @@ def draw(da, ctx, *args):
             ctx.line_to(p[0], p[1])
         ctx.stroke()
 
-    ctx.restore()
-    return 
+    def draw(self, da, ctx):
+        x2px = self.pf.pc.x_to_pixel
+        y2px = self.pf.pc.y_to_pixel
+        self.node_x = node_x = [x2px(x)*self.scale for x in self.pf.nodes_x]
+        self.node_y = node_y = [y2px(y)*self.scale for y in self.pf.nodes_y]
+
+        ctx.save()
+        self.draw_map(da, ctx)
+        self.draw_rrt(da,ctx)
+
+        if self.solution:
+            self.draw_solution(da, ctx)
+        ctx.restore()
+        return 
 
 def main(directory, scale, x0, y0, x1, y1):
 #    pdb.set_trace()
@@ -66,15 +90,26 @@ def main(directory, scale, x0, y0, x1, y1):
     bounds = pf.get_bounds()
     solution, path_lines = pf.find(x0, y0, x1, y1)
 
-    win = Gtk.Window()
-    win.connect('destroy', Gtk.main_quit)
     width = pf.pc.x_to_pixel(bounds.max_x - bounds.min_x)*scale
     height = pf.pc.x_to_pixel(bounds.max_y - bounds.min_y)*scale
+
+    win = Gtk.Window()
+    win.connect('destroy', Gtk.main_quit)
     win.set_default_size(width, height)
 
-    drawingarea = Gtk.DrawingArea()
-    win.add(drawingarea)
-    drawingarea.connect('draw', draw, pf, solution, width, height, scale)
+    drawing_area = Gtk.DrawingArea()
+
+    rrt_display = RrtDisplay(
+        drawing_area,
+        pf,
+        width,
+        height,
+        scale,
+        solution
+        )
+
+    win.add(drawing_area)
+    drawing_area.connect('draw', rrt_display.draw)
     win.show_all()
     Gtk.main()
 
