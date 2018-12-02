@@ -1,5 +1,5 @@
 """Functions for working with RRTs."""
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 import cv2 # pylint: disable=wrong-import-order
 import heapq
 import math
@@ -11,6 +11,8 @@ import random
 
 import bresenham
 import meshcut
+
+Bounds = namedtuple('Bounds', ['min_x', 'max_x', 'min_y', 'max_y'])
 
 class PointConverter:
     """Convert coordinates in domain space to pixel space."""
@@ -49,6 +51,9 @@ class PointConverter:
 
     def point_to_pixel(self, p):
         return self.x_to_pixel(p[0]), self.y_to_pixel(p[1])
+
+    def scaled_point_to_pixel(self, p, scale=1.0):
+        return self.x_to_pixel(p[0])*scale, self.y_to_pixel(p[1])*scale
 
     def random_point(self, ):
         x = self.random_x()
@@ -495,3 +500,6 @@ class PathFinder:
         if not node:
             raise Exception("Could not find a clear path from ({}, {}) to a node".format(x, y))
         return node
+
+    def get_bounds(self):
+        return Bounds(self.min_x, self.max_x, self.min_y, self.max_y)
