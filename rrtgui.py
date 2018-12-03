@@ -26,6 +26,11 @@ class RrtDisplay(Gtk.Window):
         button1.connect("clicked", self.on_folder_clicked)
         box.pack_start(button1, True, True, 0)
 
+        self.button2 = Gtk.Button("Make RRT")
+        self.button2.connect("clicked", self.on_make_rrt_clicked)
+        self.button2.set_sensitive(False)
+        box.pack_start(self.button2, True, True, 0)
+
         self.drawing_area = Gtk.DrawingArea()
         self.drawing_area.connect('draw', self.draw)
         vbox.pack_start(self.drawing_area, True, True, 0)
@@ -36,13 +41,17 @@ class RrtDisplay(Gtk.Window):
         self.status_bar.push(self.context_id, "Pick a Gibson folder to load")
 
         self.scale = 0.1
+        self.epsilon = 0.1
+        self.erosion_iterations = 5
+        self.num_nodes = 5000
         self.pf = None
         self.solution = None
         self.cross_section_2d = None
         self.floor_map = None
         self.free = None
+        self.object_file_name = None
 
-    def load_object_file(self, object_file_name):
+    def load_object_file_worker(self, object_file_name):
         px_per_meter = 500
         padding_meters = 0.5
         erosion_iterations = 5
@@ -77,10 +86,28 @@ class RrtDisplay(Gtk.Window):
                 padding_meters, free),
             cross_section_2d=cross_section_2d,
             )
-        self.send_status_message("Loaded {}".format(os.path.basename(object_file_name)))
-        self.drawing_area.queue_draw()
+        self.object_file_name = object_file_name
+        self.object_file_loaded()
         return
-        #GLib.idle_add(self.send_redraw)
+
+    def object_file_loaded(self):
+        self.button2.set_sensitive(True)
+        self.send_status_message("Loaded {}".format(os.path.basename(self.object_file_name)))
+        self.drawing_area.queue_draw()
+
+    def load_object_file(self, obj_file_name):
+        self.pf = None
+        self.solution = None
+        self.cross_section_2d = None
+        self.floor_map = None
+        self.free = None
+        self.obj_file_name = None
+        self.button2.set_sensitive(False)
+        self.drawing_area.queue_draw()
+
+        thread = threading.Thread(target=self.load_object_file_worker, args=(obj_file_name,))
+        thread.daemon = True
+        thread.start()
 
     def on_folder_clicked(self, widget):
         dialog = Gtk.FileChooserDialog("Choose a folder", self,
@@ -94,13 +121,48 @@ class RrtDisplay(Gtk.Window):
             folder = dialog.get_filename()
             obj_file_name = os.path.join(folder, 'mesh_z_up.obj')
             if os.path.exists(obj_file_name):
-                thread = threading.Thread(target=self.load_object_file, args=(obj_file_name,))
-                thread.daemon = True
-                thread.start()
+                self.load_object_file(obj_file_name)
             else:
                 err_file_name = '.../' + '/'.join(obj_file_name.split('/')[-2:])
                 GLib.idle_add(self.send_status_message, "File {} does not exist. Try another folder.".format(err_file_name))
         dialog.destroy()
+
+    def make_rrt_worker(self):
+#        counter = 0
+        def callback(nodes_x, nodes_y, edges):
+            # nonlocal counter
+            # counter += 1
+            # if counter%1000 == 0:
+                self.pf.nodes_x = np.copy(nodes_x)
+                self.pf.nodes_y = np.copy(nodes_y)
+                self.pf.edges_idx = np.copy(edges)
+                self.send_redraw()
+
+        self.send_status_message("Creating RRT")
+        _, _, self.pf.nodes_x, self.pf.nodes_y, self.pf.edges_idx = rrt.make_rrt(
+            self.pf.cross_section_2d,
+            self.pf.padding_meters,
+            self.pf.px_per_meter,
+            self.num_nodes,
+            self.epsilon,
+            self.pf.free,
+            new_edge_callback=callback,
+            )
+        self.rrt_made()
+
+    def rrt_made(self):
+        self.button2.set_sensitive(True)
+        self.send_status_message("Created RRT")
+        self.drawing_area.queue_draw()
+
+    def make_rrt(self):
+        thread = threading.Thread(target=self.make_rrt_worker,)
+        thread.daemon = True
+        thread.start()
+
+    def on_make_rrt_clicked(self, widget):
+        self.make_rrt()
+        return
 
     def send_status_message(self, message):
         self.status_bar.push(self.context_id, message)
@@ -156,7 +218,7 @@ class RrtDisplay(Gtk.Window):
         if self.pf:
             self.draw_map(da, ctx)
 
-            if self.pf.nodes_x:
+            if self.pf.nodes_x is not None:
                 x2px = self.pf.pc.x_to_pixel
                 y2px = self.pf.pc.y_to_pixel
                 self.node_x = node_x = [x2px(x)*self.scale for x in self.pf.nodes_x]
@@ -170,6 +232,7 @@ class RrtDisplay(Gtk.Window):
         return 
 
 if __name__=='__main__':
+#    pdb.set_trace()
     win = RrtDisplay()
     win.connect("destroy", Gtk.main_quit)
     win.show_all()

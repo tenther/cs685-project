@@ -192,22 +192,25 @@ def line_check(p0, p1, free, skip=0):
             return False
     return True
 
-def make_rrt(cross_section,
-             padding_meters,
-             px_per_meter,
-             num_nodes,
-             epsilon,
-             free,
-             extend_line=False,
-             crossing_paths=True):
-#    pdb.set_trace()
+def make_rrt(
+        cross_section,
+        padding_meters,
+        px_per_meter,
+        num_nodes,
+        epsilon,
+        free,
+        extend_line=False,
+        crossing_paths=True,
+        new_edge_callback=None,
+        ):
     if not crossing_paths:
         free = np.copy(free)
 
     min_x, max_x, min_y, max_y = cross_section_bounds(cross_section, padding_meters)
 
-    pc = PointConverter((min_x, max_x, min_y, max_y),
-                        px_per_meter, padding_meters, free)
+    pc = PointConverter(
+        (min_x, max_x, min_y, max_y),
+        px_per_meter, padding_meters, free)
 
     starting_point = pc.random_free_point()
     nodes_x = np.zeros(num_nodes, np.float32)
@@ -218,7 +221,6 @@ def make_rrt(cross_section,
     edges_from_px = []
     edges_to_px = []
 
-#    pdb.set_trace()
     i = 1
     misses = 0
     while True:
@@ -236,8 +238,6 @@ def make_rrt(cross_section,
         x_delta = np.cos(theta) * epsilon
         y_delta = np.sin(theta) * epsilon
 
-
-#        pdb.set_trace()
         node_iter = 1
         p0 = pc.point_to_pixel((nodes_x[closest_point_idx],
                                 nodes_y[closest_point_idx]))
@@ -252,6 +252,8 @@ def make_rrt(cross_section,
                 nodes_y[i] = node[1]
                 edges[i-1][0] = closest_point_idx
                 edges[i-1][1] = i
+                if new_edge_callback:
+                    new_edge_callback(nodes_x, nodes_y, edges)
                 edges_from_px.append(p0)
                 edges_to_px.append(p1)
                 if not crossing_paths:
