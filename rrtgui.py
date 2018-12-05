@@ -128,13 +128,13 @@ class RrtDisplay(Gtk.Window):
         dialog.destroy()
 
     def make_rrt_worker(self):
-#        counter = 0
+        counter = 0
         def callback(nodes_x, nodes_y, edges):
-            # nonlocal counter
-            # counter += 1
-            # if counter%1000 == 0:
-                self.pf.nodes_x = np.copy(nodes_x)
-                self.pf.nodes_y = np.copy(nodes_y)
+            nonlocal counter
+            counter += 1
+            if counter%100 == 0:
+                self.pf.nodes_x = nodes_x
+                self.pf.nodes_y = nodes_y
                 self.pf.edges_idx = np.copy(edges)
                 self.send_redraw()
 

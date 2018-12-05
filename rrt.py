@@ -263,13 +263,13 @@ def make_rrt(
                 p0 = p1
                 i += 1
                 if i%1000 == 0:
-                    print("{}/{}".format(i, num_nodes))
+                    pass
                 if not extend_line or i == num_nodes:
                     break
             else:
                 misses += 1
                 if misses%1000 == 0:
-                    print("misses {}".format(misses))
+                    pass
                 break
         if i == num_nodes:
             break
