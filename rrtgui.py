@@ -1,13 +1,17 @@
 #!/usr/bin/env python
 import argparse
 import cairo
+from collections import defaultdict
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, GLib
+from gi.repository import Gtk, GLib, Gdk
+import math
 import numpy as np
 import os
 import pdb
+import sys
 import threading
+import traceback
 
 import rrt
 
@@ -22,17 +26,32 @@ class RrtDisplay(Gtk.Window):
         box = Gtk.Box(spacing=6)
         vbox.pack_start(box, False, True, 0)
 
-        button1 = Gtk.Button("Load")
-        button1.connect("clicked", self.on_folder_clicked)
-        box.pack_start(button1, True, True, 0)
+        self.load_button = Gtk.Button("Load")
+        self.load_button.connect("clicked", self.on_folder_clicked)
+        box.pack_start(self.load_button, True, True, 0)
 
-        self.button2 = Gtk.Button("Make RRT")
-        self.button2.connect("clicked", self.on_make_rrt_clicked)
-        self.button2.set_sensitive(False)
-        box.pack_start(self.button2, True, True, 0)
+        self.rrt_button = Gtk.Button("Make RRT")
+        self.rrt_button.connect("clicked", self.on_make_rrt_clicked)
+        self.rrt_button.set_sensitive(False)
+        box.pack_start(self.rrt_button, True, True, 0)
+
+        self.find_button = Gtk.Button("Find Path")
+        self.find_button.connect("clicked", self.on_find_path_clicked)
+        self.find_button.set_sensitive(False)
+        box.pack_start(self.find_button, True, True, 0)
 
         self.drawing_area = Gtk.DrawingArea()
         self.drawing_area.connect('draw', self.draw)
+        self.drawing_area.set_events(
+            self.drawing_area.get_events()
+            | Gdk.EventMask.BUTTON_PRESS_MASK
+            | Gdk.EventMask.BUTTON_RELEASE_MASK)
+        
+        self.connect("key-press-event", self.key_pressed)
+        self.connect("key-release-event", self.key_release)
+        self.drawing_area.connect('button-press-event', self.mouse_click)
+        self.drawing_area.connect('button-release-event', self.mouse_release)
+
         vbox.pack_start(self.drawing_area, True, True, 0)
 
         self.status_bar = Gtk.Statusbar()
@@ -50,6 +69,42 @@ class RrtDisplay(Gtk.Window):
         self.floor_map = None
         self.free = None
         self.object_file_name = None
+
+        self.pressed = None
+        self.path_start_point = None
+        self.path_end_point = None
+        self.path_start_px = None
+        self.path_end_px = None
+
+    def key_pressed(self, widget, event, data=None):
+        key = Gdk.keyval_name(event.keyval)
+        self.pressed = key
+        print(key)
+
+    def key_release(self, widget, event, data=None):
+        self.pressed = None
+        print("Released")        
+
+    def mouse_click(self, widget, event):
+        if self.pf and self.pf.pc:
+            pixels = event.x, event.y
+            map_point = self.pf.pc.pixel_to_point(
+                (event.x/self.scale,
+                 event.y/self.scale))
+            if self.pressed == 'Shift_L':
+                self.path_end_point = map_point
+                self.path_end_px = pixels
+                print("{}".format(self.path_end_px))
+            else:
+                self.path_start_point = map_point
+                self.path_start_px = pixels
+                print("{}".format(self.path_start_px))
+            self.drawing_area.queue_draw()
+            if self.path_start_point and self.path_end_point:
+                self.find_button.set_sensitive(True)
+                
+    def mouse_release(self, widget, event):
+        pass
 
     def load_object_file_worker(self, object_file_name):
         px_per_meter = 500
@@ -91,7 +146,8 @@ class RrtDisplay(Gtk.Window):
         return
 
     def object_file_loaded(self):
-        self.button2.set_sensitive(True)
+        self.load_button.set_sensitive(True)
+        self.rrt_button.set_sensitive(True)
         self.send_status_message("Loaded {}".format(os.path.basename(self.object_file_name)))
         self.drawing_area.queue_draw()
 
@@ -102,13 +158,28 @@ class RrtDisplay(Gtk.Window):
         self.floor_map = None
         self.free = None
         self.obj_file_name = None
-        self.button2.set_sensitive(False)
+        self.rrt_button.set_sensitive(False)
         self.drawing_area.queue_draw()
+        self.rrt_button.set_sensitive(False)
+        self.load_button.set_sensitive(False)
 
         thread = threading.Thread(target=self.load_object_file_worker, args=(obj_file_name,))
         thread.daemon = True
         thread.start()
 
+    def on_find_path_clicked(self, widget):
+        if not (self.path_start_point and self.path_end_point):
+            GLib.idle_add(self.send_status_message,
+                          "Both start and end points must be defined to find a path.")
+            return
+        solution, lines = self.pf.find(
+            self.path_start_point[0],
+            self.path_start_point[1],
+            self.path_end_point[0],
+            self.path_end_point[1])
+        self.solution = solution
+        self.send_redraw()
+    
     def on_folder_clicked(self, widget):
         dialog = Gtk.FileChooserDialog("Choose a folder", self,
             Gtk.FileChooserAction.SELECT_FOLDER,
@@ -148,14 +219,29 @@ class RrtDisplay(Gtk.Window):
             self.pf.free,
             new_edge_callback=callback,
             )
+
+        edges = defaultdict(dict)
+        edges_idx = self.pf.edges_idx
+        nodes_x = self.pf.nodes_x
+        nodes_y = self.pf.nodes_y
+        for edge_idx in edges_idx:
+            n0 = edge_idx[0]
+            n1 = edge_idx[1]
+            distance = math.sqrt((nodes_x[n0] - nodes_x[n1])**2 +
+                                 (nodes_y[n0] - nodes_y[n1])**2)
+            edges[n0][n1] = distance
+            edges[n1][n0] = distance
+        self.pf.edges = edges
         self.rrt_made()
 
     def rrt_made(self):
-        self.button2.set_sensitive(True)
+        self.rrt_button.set_sensitive(True)
         self.send_status_message("Created RRT")
         self.drawing_area.queue_draw()
 
     def make_rrt(self):
+        self.load_button.set_sensitive(False)
+        self.rrt_button.set_sensitive(False)
         thread = threading.Thread(target=self.make_rrt_worker,)
         thread.daemon = True
         thread.start()
@@ -197,6 +283,7 @@ class RrtDisplay(Gtk.Window):
 
     def draw_solution(self, da, ctx):
         ctx.set_source_rgb(1.0, 0, 0)
+        ctx.set_line_width(5)
         px_path = []
         node_x = self.node_x
         node_y = self.node_y
@@ -208,6 +295,16 @@ class RrtDisplay(Gtk.Window):
         for p in px_path[1:]:
             ctx.line_to(p[0], p[1])
         ctx.stroke()
+
+    def filled_circle(self, ctx, center, radius, color):
+        ctx.set_source_rgb(*color)
+        ctx.arc(
+            center[0], 
+            center[1], 
+            radius,
+            0,
+            2*math.pi)
+        ctx.fill()
 
     def draw(self, da, ctx):
         ctx.set_source_rgb(1,1,1)
@@ -225,6 +322,10 @@ class RrtDisplay(Gtk.Window):
                 self.node_y = node_y = [y2px(y)*self.scale for y in self.pf.nodes_y]
                 self.draw_rrt(da,ctx)
 
+                if self.path_start_px:
+                    self.filled_circle(ctx, self.path_start_px, 10, (0, 1, 0))
+                if self.path_end_px:
+                    self.filled_circle(ctx, self.path_end_px, 10, (1, 0, 0))
                 if self.solution:
                     self.draw_solution(da, ctx)
         ctx.restore()

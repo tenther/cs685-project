@@ -49,6 +49,15 @@ class PointConverter:
         return int((y - self.min_y) * self.px_per_meter +
                    self.px_per_meter * self.padding_meters / 2.0)
 
+    def pixel_to_x(self, xpx):
+        return ((float(xpx) / self.px_per_meter) - self.padding_meters / 2.0 + self.min_x)
+
+    def pixel_to_y(self, ypx):
+        return ((float(ypx) / self.px_per_meter) - self.padding_meters / 2.0 + self.min_y)
+
+    def pixel_to_point(self,px):
+        return self.pixel_to_x(px[0]), self.pixel_to_y(px[1])
+
     def point_to_pixel(self, p):
         return self.x_to_pixel(p[0]), self.y_to_pixel(p[1])
 
