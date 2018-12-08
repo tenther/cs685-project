@@ -164,24 +164,6 @@ def make_free_space_image(cross_section_2d,
 
     cv2.polylines(image, fill_in_gaps(lines), False, (255, 255, 255), thickness=3)
 
-    # if False:
-    #     font = cv2.FONT_HERSHEY_SIMPLEX
-    #     fontScale = 1
-    #     fontColor = (255, 255, 255)
-    #     lineType = 2
-
-    #     for i, line in enumerate(lines):
-    #         if len(line) > 1:
-    #             for end in [0, -1]:
-    #                 cv2.putText(
-    #                     image,
-    #                     "{}.{}".format(i, end),
-    #                     tuple(line[end]),
-    #                     font,
-    #                     fontScale,
-    #                     fontColor,
-    #                     lineType)
-
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     mask = np.zeros((image_width + 2, image_height + 2), np.uint8)
