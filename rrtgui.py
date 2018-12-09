@@ -9,6 +9,7 @@ import math
 import numpy as np
 import os
 import pdb
+import random
 import sys
 import threading
 import traceback
@@ -39,6 +40,11 @@ class RrtDisplay(Gtk.Window):
         self.find_button.connect("clicked", self.on_find_path_clicked)
         self.find_button.set_sensitive(False)
         box.pack_start(self.find_button, True, True, 0)
+
+        self.refine_button = Gtk.Button("Refine Path")
+        self.refine_button.connect("clicked", self.on_refine_path_clicked)
+        self.refine_button.set_sensitive(False)
+        box.pack_start(self.refine_button, True, True, 0)
 
         self.drawing_area = Gtk.DrawingArea()
         self.drawing_area.connect('draw', self.draw)
@@ -79,11 +85,9 @@ class RrtDisplay(Gtk.Window):
     def key_pressed(self, widget, event, data=None):
         key = Gdk.keyval_name(event.keyval)
         self.pressed = key
-        print(key)
 
     def key_release(self, widget, event, data=None):
         self.pressed = None
-        print("Released")        
 
     def mouse_click(self, widget, event):
         if self.pf and self.pf.pc:
@@ -94,14 +98,12 @@ class RrtDisplay(Gtk.Window):
             if self.pressed == 'Shift_L':
                 self.path_end_point = map_point
                 self.path_end_px = pixels
-                print("{}".format(self.path_end_px))
             else:
                 self.path_start_point = map_point
                 self.path_start_px = pixels
-                print("{}".format(self.path_start_px))
             self.drawing_area.queue_draw()
             if self.path_start_point and self.path_end_point:
-                self.find_button.set_sensitive(True)
+                GLib.idle_add(self.find_button.set_sensitive, (True,))
                 
     def mouse_release(self, widget, event):
         pass
@@ -129,12 +131,6 @@ class RrtDisplay(Gtk.Window):
         self.pf = rrt.PathFinder(
             os.path.dirname(object_file_name),
             free=free,
-            min_x=min_x,
-            max_x=max_x,
-            min_y=min_y,
-            max_y=max_y,
-            px_per_meter=px_per_meter,
-            padding_meters=padding_meters,
             pc=rrt.PointConverter(
                 (min_x, max_x, min_y, max_y),
                 px_per_meter,
@@ -146,8 +142,8 @@ class RrtDisplay(Gtk.Window):
         return
 
     def object_file_loaded(self):
-        self.load_button.set_sensitive(True)
-        self.rrt_button.set_sensitive(True)
+        GLib.idle_add(self.load_button.set_sensitive, (True,))
+        GLib.idle_add(self.rrt_button.set_sensitive, (True,))
         self.send_status_message("Loaded {}".format(os.path.basename(self.object_file_name)))
         self.drawing_area.queue_draw()
 
@@ -158,28 +154,129 @@ class RrtDisplay(Gtk.Window):
         self.floor_map = None
         self.free = None
         self.obj_file_name = None
-        self.rrt_button.set_sensitive(False)
+        GLib.idle_add(self.rrt_button.set_sensitive, (False,))
         self.drawing_area.queue_draw()
-        self.rrt_button.set_sensitive(False)
-        self.load_button.set_sensitive(False)
+        GLib.idle_add(self.rrt_button.set_sensitive, (False,))
+        GLib.idle_add(self.load_button.set_sensitive, (False,))
 
         thread = threading.Thread(target=self.load_object_file_worker, args=(obj_file_name,))
         thread.daemon = True
         thread.start()
 
-    def on_find_path_clicked(self, widget):
-        if not (self.path_start_point and self.path_end_point):
-            GLib.idle_add(self.send_status_message,
-                          "Both start and end points must be defined to find a path.")
-            return
-        solution, lines = self.pf.find(
+    def find_path_worker(self):
+        solution, _ = self.pf.find(
             self.path_start_point[0],
             self.path_start_point[1],
             self.path_end_point[0],
             self.path_end_point[1])
         self.solution = solution
         self.send_redraw()
-    
+        GLib.idle_add(self.refine_button.set_sensitive, (True,))
+        
+    def on_find_path_clicked(self, widget):
+        if not (self.path_start_point and self.path_end_point):
+            GLib.idle_add(self.send_status_message,
+                          "Both start and end points must be defined to find a path.")
+            return
+
+        thread = threading.Thread(target=self.find_path_worker)
+        thread.daemon = True
+        thread.start()
+
+    def refine_path_worker(self,):
+        path_nodes = self.solution.path
+        node_map = [node for node in self.solution.path]
+
+        num_nodes = len(path_nodes)
+        nodes_x = np.array([self.pf.nodes_x[node] for node in path_nodes])
+        nodes_y = np.array([self.pf.nodes_y[node] for node in path_nodes])
+        points = [self.pf.pc.point_to_pixel((nodes_x[i], nodes_y[i])) for i in range(num_nodes)]
+        last_cost = self.solution.cost
+
+        edges = defaultdict(dict)
+        for idx, node in enumerate(path_nodes):
+            if idx:
+                node0, node1 = idx-1, idx
+                distance = math.sqrt((nodes_x[node0] - nodes_x[node1])**2 +
+                                     (nodes_y[node0] - nodes_y[node1])**2)
+                edges[node0][node1] = distance
+                edges[node1][node0] = distance
+
+        solution = None
+        last_solution = None
+        max_edge_tries = num_nodes
+        max_iters = 1000
+        tolerance = 0.0000001
+        max_zero_diffs = 100
+        n_zero_diffs = 0
+
+        iters = 0
+        mesg = ""
+        while True:
+            iters += 1
+            node0 = None
+            node1 = None
+            found = False
+            for i in range(max_edge_tries):
+                node0 = int(random.random() * num_nodes)
+                node1 = int(random.random() * num_nodes)
+                if(node0 != node1 and
+                   node0 not in edges[node1] and
+                   rrt.line_check(points[node0], points[node1], self.pf.free, skip=5)):
+                        found = True
+                        break
+            if found:
+                distance = math.sqrt((nodes_x[node0] - nodes_x[node1])**2 +
+                                     (nodes_y[node0] - nodes_y[node1])**2)
+                edges[node0][node1] = distance
+                edges[node1][node0] = distance
+                pf = rrt.PathFinder(
+                    free=self.pf.free,
+                    pc=self.pf.pc,
+                    nodes_x=nodes_x,
+                    nodes_y=nodes_y,
+                    edges=edges
+                )
+                solution, _ = pf.find(
+                    self.path_start_point[0],
+                    self.path_start_point[1],
+                    self.path_end_point[0],
+                    self.path_end_point[1])
+                if not solution:
+                    mesg = "Didn't get back a path solution"
+                    solution = last_soluton
+                    break
+                cost = solution.cost
+                delta = last_cost - cost
+                if(delta < tolerance):
+                    mesg = "Got a diff {} < which is less than {}".format(delta, tolerance)
+                    n_zero_diffs += 1
+                    if n_zero_diffs == max_zero_diffs:
+                        break
+                    else:
+                        continue
+                n_zero_diffs = 0
+                last_cost = cost
+                last_solution = solution
+                if(iters > max_iters):
+                    mesg = "Ran out of iterations {}".format(max_iters)
+                    break
+            else:
+                mesg = "Couldn't find a new edge after {} tries.".format(max_tries)
+                break
+
+        self.send_status_message(mesg)
+        if solution:
+            for i, node in enumerate(solution.path):
+                solution.path[i] = node_map[node]
+            self.solution = solution
+            self.send_redraw()
+
+    def on_refine_path_clicked(self, widget):
+        thread = threading.Thread(target=self.refine_path_worker)
+        thread.daemon = True
+        thread.start()
+
     def on_folder_clicked(self, widget):
         dialog = Gtk.FileChooserDialog("Choose a folder", self,
             Gtk.FileChooserAction.SELECT_FOLDER,
@@ -212,12 +309,13 @@ class RrtDisplay(Gtk.Window):
         self.send_status_message("Creating RRT")
         _, _, self.pf.nodes_x, self.pf.nodes_y, self.pf.edges_idx = rrt.make_rrt(
             self.pf.cross_section_2d,
-            self.pf.padding_meters,
-            self.pf.px_per_meter,
+            self.pf.pc.padding_meters,
+            self.pf.pc.px_per_meter,
             self.num_nodes,
             self.epsilon,
             self.pf.free,
             new_edge_callback=callback,
+            crossing_paths=False,
             )
 
         edges = defaultdict(dict)
@@ -235,13 +333,24 @@ class RrtDisplay(Gtk.Window):
         self.rrt_made()
 
     def rrt_made(self):
-        self.rrt_button.set_sensitive(True)
+        GLib.idle_add(self.rrt_button.set_sensitive, (True,))
         self.send_status_message("Created RRT")
         self.drawing_area.queue_draw()
 
+    def clear_start_and_end(self):
+        self.path_start_point = None
+        self.path_end_point = None
+        self.path_start_px = None
+        self.path_end_px = None
+
+    def clear_path(self):
+        self.clear_start_and_end()
+        self.solution = None
+
     def make_rrt(self):
-        self.load_button.set_sensitive(False)
-        self.rrt_button.set_sensitive(False)
+        self.clear_path()
+        GLib.idle_add(self.load_button.set_sensitive, (False,))
+        GLib.idle_add(self.rrt_button.set_sensitive, (False,))
         thread = threading.Thread(target=self.make_rrt_worker,)
         thread.daemon = True
         thread.start()
@@ -333,8 +442,11 @@ class RrtDisplay(Gtk.Window):
         return 
 
 if __name__=='__main__':
-#    pdb.set_trace()
-    win = RrtDisplay()
-    win.connect("destroy", Gtk.main_quit)
-    win.show_all()
-    Gtk.main()
+    try: 
+        win = RrtDisplay()
+        win.connect("destroy", Gtk.main_quit)
+        win.show_all()
+        Gtk.main()
+    except Exception as e:
+        print("Exception {}: {}".format(e, traceback.format_exception(*sys.exc_info())))
+        raise

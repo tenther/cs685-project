@@ -83,6 +83,9 @@ class PointConverter:
             if self.free_point(x, y):
                 return x, y
 
+    def get_bounds(self):
+        return Bounds(self.min_x, self.max_x, self.min_y, self.max_y)
+
 def load_obj(fn):
     verts = []
     faces = []
@@ -385,21 +388,15 @@ class PathFinder:
     """Finds path in RRT using A* search."""
     def __init__(
             self,
-            directory,
-            nodes_x = None,
-            nodes_y = None,
-            edges_idx = None,
-            free = None,
-            config = None,
-            min_x = None,
-            max_x = None,
-            min_y = None,
-            max_y = None,
-            px_per_meter = None,
-            padding_meters = None,
-            pc = None,
-            cross_section_2d = None,
-            edges = None,
+            directory=None,
+            nodes_x=None,
+            nodes_y=None,
+            edges_idx=None,
+            free=None,
+            config=None,
+            pc=None,
+            cross_section_2d=None,
+            edges=None,
             ):
         self.dir = directory
         self.nodes_x = nodes_x
@@ -407,12 +404,6 @@ class PathFinder:
         self.edges_idx = edges_idx
         self.free = free
         self.config = config
-        self.min_x = min_x
-        self.max_x = max_x
-        self.min_y = min_y
-        self.max_y = max_y
-        self.px_per_meter = px_per_meter
-        self.padding_meters = padding_meters
         self.pc = pc
         self.cross_section_2d = cross_section_2d
         self.edges = edges
@@ -431,15 +422,14 @@ class PathFinder:
 
         with open(config_file_name, 'rb') as config_file:
             self.config = pickle.load(config_file)
-        self.min_x = self.config['min_x']
-        self.max_x = self.config['max_x']
-        self.min_y = self.config['min_y']
-        self.max_y = self.config['max_y']
-        self.px_per_meter = self.config['px_per_meter']
-        self.padding_meters = self.config['padding_meters']
-        self.pc = PointConverter((self.min_x, self.max_x, self.min_y, self.max_y),
-                                 self.px_per_meter,
-                                 self.padding_meters, self.free)
+        self.pc = PointConverter((
+            self.config['min_x'],
+            self.config['max_x'],
+            self.config['min_y'],
+            self.config['max_y']),
+            self.config['px_per_meter'],
+            self.self.config['padding_meters'],
+            self.free)
 
         edges = defaultdict(dict)
         edges_idx = self.edges_idx
@@ -494,9 +484,9 @@ class PathFinder:
                           self.pc.point_to_pixel((x, y)), self.free):
                 node = j
                 break
-        if not node:
+        if node is None:
             raise Exception("Could not find a clear path from ({}, {}) to a node".format(x, y))
         return node
 
     def get_bounds(self):
-        return Bounds(self.min_x, self.max_x, self.min_y, self.max_y)
+        return self.pc.get_bounds()
