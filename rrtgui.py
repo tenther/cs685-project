@@ -1,28 +1,35 @@
 #!/usr/bin/env python
-import argparse
-import cairo
+import gi                           # pylint: disable=wrong-import-order,wrong-import-position
+gi.require_version("Gtk", "3.0")    # pylint: disable=wrong-import-order,wrong-import-position
 from collections import defaultdict
-import gi
-gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, GLib, Gdk
+from gi.repository import Gtk, GLib, Gdk # pylint: disable=wrong-import-order,wrong-import-position
 import math
 import numpy as np
 import os
-import pdb
 import random
 import sys
 import threading
 import traceback
-
+import cairo                        # pylint: disable=wrong-import-order,wrong-import-position
 import rrt
+
+def filled_circle(ctx, center, radius, color):
+    ctx.set_source_rgb(*color)
+    ctx.arc(
+        center[0],
+        center[1],
+        radius,
+        0,
+        2*math.pi)
+    ctx.fill()
 
 class RrtDisplay(Gtk.Window):
     def __init__(self):
 
         Gtk.Window.__init__(self, title="RRT Planner")
-        self.set_default_size(500,500)
+        self.set_default_size(500, 500)
 
-        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL) 
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.add(vbox)
         box = Gtk.Box(spacing=6)
         vbox.pack_start(box, False, True, 0)
@@ -52,7 +59,7 @@ class RrtDisplay(Gtk.Window):
             self.drawing_area.get_events()
             | Gdk.EventMask.BUTTON_PRESS_MASK
             | Gdk.EventMask.BUTTON_RELEASE_MASK)
-        
+
         self.connect("key-press-event", self.key_pressed)
         self.connect("key-release-event", self.key_release)
         self.drawing_area.connect('button-press-event', self.mouse_click)
@@ -81,15 +88,18 @@ class RrtDisplay(Gtk.Window):
         self.path_end_point = None
         self.path_start_px = None
         self.path_end_px = None
+        self.node_x = None
+        self.node_y = None
+        self.obj_file_name = None
 
-    def key_pressed(self, widget, event, data=None):
+    def key_pressed(self, widget, event, data=None): # pylint: disable=unused-argument
         key = Gdk.keyval_name(event.keyval)
         self.pressed = key
 
-    def key_release(self, widget, event, data=None):
+    def key_release(self, widget, event, data=None): # pylint: disable=unused-argument
         self.pressed = None
 
-    def mouse_click(self, widget, event):
+    def mouse_click(self, widget, event): # pylint: disable=unused-argument
         if self.pf and self.pf.pc:
             pixels = event.x, event.y
             map_point = self.pf.pc.pixel_to_point(
@@ -104,8 +114,8 @@ class RrtDisplay(Gtk.Window):
             self.drawing_area.queue_draw()
             if self.path_start_point and self.path_end_point:
                 GLib.idle_add(self.find_button.set_sensitive, (True,))
-                
-    def mouse_release(self, widget, event):
+
+    def mouse_release(self, widget, event): # pylint: disable=unused-argument
         pass
 
     def load_object_file_worker(self, object_file_name):
@@ -139,7 +149,6 @@ class RrtDisplay(Gtk.Window):
             )
         self.object_file_name = object_file_name
         self.object_file_loaded()
-        return
 
     def object_file_loaded(self):
         GLib.idle_add(self.load_button.set_sensitive, (True,))
@@ -172,8 +181,8 @@ class RrtDisplay(Gtk.Window):
         self.solution = solution
         self.send_redraw()
         GLib.idle_add(self.refine_button.set_sensitive, (True,))
-        
-    def on_find_path_clicked(self, widget):
+
+    def on_find_path_clicked(self, widget): # pylint: disable=unused-argument
         if not (self.path_start_point and self.path_end_point):
             GLib.idle_add(self.send_status_message,
                           "Both start and end points must be defined to find a path.")
@@ -218,13 +227,19 @@ class RrtDisplay(Gtk.Window):
             node1 = None
             found = False
             for i in range(max_edge_tries):
-                node0 = int(random.random() * num_nodes)
-                node1 = int(random.random() * num_nodes)
+                # if not last_solution:
+                #     nodes = list(range(num_nodes))
+                # else:
+                #     nodes = last_solution.path
+                nodes = list(range(num_nodes))
+                node0 = nodes[int(random.random() * len(nodes))]
+                node1 = nodes[int(random.random() * len(nodes))]
+
                 if(node0 != node1 and
                    node0 not in edges[node1] and
                    rrt.line_check(points[node0], points[node1], self.pf.free, skip=5)):
-                        found = True
-                        break
+                    found = True
+                    break
             if found:
                 distance = math.sqrt((nodes_x[node0] - nodes_x[node1])**2 +
                                      (nodes_y[node0] - nodes_y[node1])**2)
@@ -244,11 +259,15 @@ class RrtDisplay(Gtk.Window):
                     self.path_end_point[1])
                 if not solution:
                     mesg = "Didn't get back a path solution"
-                    solution = last_soluton
+                    solution = last_soluton or None
                     break
                 cost = solution.cost
                 delta = last_cost - cost
-                if(delta < tolerance):
+                if delta < 0:
+                    last_cost = cost
+                    last_solution = solution
+                    continue
+                if delta < tolerance:
                     mesg = "Got a diff {} < which is less than {}".format(delta, tolerance)
                     n_zero_diffs += 1
                     if n_zero_diffs == max_zero_diffs:
@@ -258,11 +277,11 @@ class RrtDisplay(Gtk.Window):
                 n_zero_diffs = 0
                 last_cost = cost
                 last_solution = solution
-                if(iters > max_iters):
+                if iters > max_iters:
                     mesg = "Ran out of iterations {}".format(max_iters)
                     break
             else:
-                mesg = "Couldn't find a new edge after {} tries.".format(max_tries)
+                mesg = "Couldn't find a new edge after {} tries.".format(max_edge_tries)
                 break
 
         self.send_status_message(mesg)
@@ -272,13 +291,14 @@ class RrtDisplay(Gtk.Window):
             self.solution = solution
             self.send_redraw()
 
-    def on_refine_path_clicked(self, widget):
+    def on_refine_path_clicked(self, widget): # pylint: disable=unused-argument
         thread = threading.Thread(target=self.refine_path_worker)
         thread.daemon = True
         thread.start()
 
-    def on_folder_clicked(self, widget):
-        dialog = Gtk.FileChooserDialog("Choose a folder", self,
+    def on_folder_clicked(self, widget): # pylint: disable=unused-argument
+        dialog = Gtk.FileChooserDialog(
+            "Choose a folder", self,
             Gtk.FileChooserAction.SELECT_FOLDER,
             (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
              "Select", Gtk.ResponseType.OK))
@@ -292,7 +312,9 @@ class RrtDisplay(Gtk.Window):
                 self.load_object_file(obj_file_name)
             else:
                 err_file_name = '.../' + '/'.join(obj_file_name.split('/')[-2:])
-                GLib.idle_add(self.send_status_message, "File {} does not exist. Try another folder.".format(err_file_name))
+                GLib.idle_add(
+                    self.send_status_message,
+                    "File {} does not exist. Try another folder.".format(err_file_name))
         dialog.destroy()
 
     def make_rrt_worker(self):
@@ -355,24 +377,23 @@ class RrtDisplay(Gtk.Window):
         thread.daemon = True
         thread.start()
 
-    def on_make_rrt_clicked(self, widget):
+    def on_make_rrt_clicked(self, widget): # pylint: disable=unused-argument
         self.make_rrt()
-        return
 
     def send_status_message(self, message):
         self.status_bar.push(self.context_id, message)
 
     def send_redraw(self):
         self.drawing_area.queue_draw()
-        
-    def draw_map(self, da, ctx):
+
+    def draw_map(self, ctx):
         ctx.set_source_rgb(0, 0, 0)
         ctx.set_line_width(1)
-        ctx.set_line_join(cairo.LINE_JOIN_ROUND)
+        ctx.set_line_join(cairo.LINE_JOIN_ROUND) # pylint: disable=no-member
 
         p2p = self.pf.pc.scaled_point_to_pixel
 
-        for idx, line in enumerate(self.pf.cross_section_2d):
+        for line in self.pf.cross_section_2d:
             line = [p2p((x[0], x[1]), self.scale) for x in line]
             ctx.new_path()
             ctx.move_to(line[0][0], line[0][1])
@@ -380,7 +401,7 @@ class RrtDisplay(Gtk.Window):
                 ctx.line_to(p[0], p[1])
             ctx.stroke()
 
-    def draw_rrt(self, da, ctx):
+    def draw_rrt(self, ctx):
         node_x = self.node_x
         node_y = self.node_y
         ctx.set_source_rgb(0, 0, 1.0)
@@ -390,7 +411,7 @@ class RrtDisplay(Gtk.Window):
             ctx.line_to(node_x[dst], node_y[dst])
             ctx.stroke()
 
-    def draw_solution(self, da, ctx):
+    def draw_solution(self, ctx):
         ctx.set_source_rgb(1.0, 0, 0)
         ctx.set_line_width(5)
         px_path = []
@@ -405,44 +426,32 @@ class RrtDisplay(Gtk.Window):
             ctx.line_to(p[0], p[1])
         ctx.stroke()
 
-    def filled_circle(self, ctx, center, radius, color):
-        ctx.set_source_rgb(*color)
-        ctx.arc(
-            center[0], 
-            center[1], 
-            radius,
-            0,
-            2*math.pi)
-        ctx.fill()
-
-    def draw(self, da, ctx):
-        ctx.set_source_rgb(1,1,1)
-        ctx.rectangle(0,0,da.get_allocated_width(), da.get_allocated_height())
+    def draw(self, da, ctx): # pylint: disable=arguments-differ
+        ctx.set_source_rgb(1, 1, 1)
+        ctx.rectangle(0, 0, da.get_allocated_width(), da.get_allocated_height())
         ctx.fill()
 
         ctx.save()
         if self.pf:
-            self.draw_map(da, ctx)
+            self.draw_map(ctx)
 
             if self.pf.nodes_x is not None:
                 x2px = self.pf.pc.x_to_pixel
                 y2px = self.pf.pc.y_to_pixel
-                self.node_x = node_x = [x2px(x)*self.scale for x in self.pf.nodes_x]
-                self.node_y = node_y = [y2px(y)*self.scale for y in self.pf.nodes_y]
-                self.draw_rrt(da,ctx)
+                self.node_x = [x2px(x)*self.scale for x in self.pf.nodes_x]
+                self.node_y = [y2px(y)*self.scale for y in self.pf.nodes_y]
+                self.draw_rrt(ctx)
 
-                if self.path_start_px:
-                    self.filled_circle(ctx, self.path_start_px, 10, (0, 1, 0))
-                if self.path_end_px:
-                    self.filled_circle(ctx, self.path_end_px, 10, (1, 0, 0))
                 if self.solution:
-                    self.draw_solution(da, ctx)
+                    self.draw_solution(ctx)
+                if self.path_start_px:
+                    filled_circle(ctx, self.path_start_px, 10, (0, 1, 0))
+                if self.path_end_px:
+                    filled_circle(ctx, self.path_end_px, 10, (1, 0, 0))
         ctx.restore()
 
-        return 
-
-if __name__=='__main__':
-    try: 
+if __name__ == '__main__':
+    try:
         win = RrtDisplay()
         win.connect("destroy", Gtk.main_quit)
         win.show_all()
