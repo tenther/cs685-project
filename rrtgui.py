@@ -6,9 +6,11 @@ from gi.repository import Gtk, GLib, Gdk # pylint: disable=wrong-import-order,wr
 import math
 import numpy as np
 import os
+import pdb
 import random
 import sys
 import threading
+import time
 import traceback
 import cairo                        # pylint: disable=wrong-import-order,wrong-import-position
 import rrt
@@ -52,6 +54,11 @@ class RrtDisplay(Gtk.Window):
         self.refine_button.connect("clicked", self.on_refine_path_clicked)
         self.refine_button.set_sensitive(False)
         box.pack_start(self.refine_button, True, True, 0)
+
+        self.multi_refine_button = Gtk.Button("Multi Refine")
+        self.multi_refine_button.connect("clicked", self.on_multi_refine_path_clicked)
+        self.multi_refine_button.set_sensitive(True)
+        box.pack_start(self.multi_refine_button, True, True, 0)
 
         self.drawing_area = Gtk.DrawingArea()
         self.drawing_area.connect('draw', self.draw)
@@ -221,6 +228,7 @@ class RrtDisplay(Gtk.Window):
 
         iters = 0
         mesg = ""
+#        pdb.set_trace()
         while True:
             iters += 1
             node0 = None
@@ -245,6 +253,16 @@ class RrtDisplay(Gtk.Window):
                                      (nodes_y[node0] - nodes_y[node1])**2)
                 edges[node0][node1] = distance
                 edges[node1][node0] = distance
+
+                # self.pf.edges[node_map[node0]][node_map[node1]] = distance
+                # self.pf.edges[node_map[node1]][node_map[node0]] = distance
+                # n_edges = self.pf.edges_idx.shape[0]
+                # edges_idx = np.zeros((n_edges + 1, 2), dtype=np.int64)
+                # edges_idx[:n_edges,:] = self.pf.edges_idx
+                # edges_idx[n_edges] = (node_map[node0], node_map[node1])
+                # self.pf.edges_idx = edges_idx
+                # self.send_redraw()
+                
                 pf = rrt.PathFinder(
                     free=self.pf.free,
                     pc=self.pf.pc,
@@ -285,7 +303,24 @@ class RrtDisplay(Gtk.Window):
                 break
 
         self.send_status_message(mesg)
+        
         if solution:
+            # Add new edges in path to RRT
+            edges_to_add = []
+            for i, node1 in enumerate(solution.path):
+                if i:
+                    node0 = solution.path[i-1]
+                    if node_map[node1] not in self.pf.edges[node_map[node0]]:
+                        edges_to_add.append((node0, node1))
+            for node0, node1 in edges_to_add:
+                self.pf.edges[node_map[node0]][node_map[node1]] = edges[node0][node1]
+                self.pf.edges[node_map[node1]][node_map[node0]] = edges[node1][node0]
+            self.pf.edges_idx = np.vstack(
+                (self.pf.edges_idx,
+                 np.array([(node_map[i],node_map[j]) for i,j in edges_to_add],
+                          dtype=np.int64)))
+                        
+            # Copy to path to main path
             for i, node in enumerate(solution.path):
                 solution.path[i] = node_map[node]
             self.solution = solution
@@ -295,6 +330,36 @@ class RrtDisplay(Gtk.Window):
         thread = threading.Thread(target=self.refine_path_worker)
         thread.daemon = True
         thread.start()
+
+    def on_multi_refine_path_clicked(self, widget): # pylint: disable=unused-argument
+        thread = threading.Thread(target=self.refine_multi_path_worker)
+        thread.daemon = True
+        thread.start()
+
+    def refine_multi_path_worker(self):
+        for _ in range(100):
+            start_point = self.pf.pc.random_free_point()
+            finish_point = self.pf.pc.random_free_point()
+
+            self.path_start_point = start_point
+            self.path_start_px = self.pf.pc.point_to_pixel(start_point)
+            self.path_end_point = finish_point
+            self.path_end_px = self.pf.pc.point_to_pixel(finish_point)
+            
+            solution, _ = self.pf.find(
+                self.path_start_point[0],
+                self.path_start_point[1],
+                self.path_end_point[0],
+                self.path_end_point[1])
+            if solution:
+                self.solution = solution
+                self.refine_path_worker()
+        self.solution = None
+        self.path_start_point = None
+        self.path_start_px = None
+        self.path_end_point = None
+        self.path_end_px = None
+        self.send_redraw()
 
     def on_folder_clicked(self, widget): # pylint: disable=unused-argument
         dialog = Gtk.FileChooserDialog(
