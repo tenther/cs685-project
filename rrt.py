@@ -100,8 +100,8 @@ def load_obj(fn):
     faces = np.array(faces) - 1
     return verts, faces
 
-def get_cross_section(verts, faces):
-    z = np.min(verts[:, -1]) + 0.5 # 0.5 is the height of husky, actually it should be 0.37
+def get_cross_section(verts, faces, z=0.5):
+    z = np.min(verts[:, -1]) + z # 0.5 is the height of husky, actually it should be 0.37
     cross_section = meshcut.cross_section(verts, faces,
                                           plane_orig=(0, 0, z), plane_normal=(0, 0, 1))
     return cross_section

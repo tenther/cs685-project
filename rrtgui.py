@@ -82,7 +82,10 @@ class RrtDisplay(Gtk.Window):
         self.scale = 0.1
         self.epsilon = 0.1
         self.erosion_iterations = 5
+        self.num_nodes = 10000
         self.num_nodes = 5000
+        self.z = 8.0
+        self.z = 0.5
         self.pf = None
         self.solution = None
         self.cross_section_2d = None
@@ -133,7 +136,7 @@ class RrtDisplay(Gtk.Window):
         self.send_status_message("Loading object file")
         verts, faces = rrt.load_obj(object_file_name)
         self.send_status_message("Finding 2D cross-section")
-        cross_section = rrt.get_cross_section(verts, faces)
+        cross_section = rrt.get_cross_section(verts, faces, z=self.z)
         cross_section_2d = [c[:, 0:2] for c in cross_section]
 
         self.send_status_message("Creating free mask")

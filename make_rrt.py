@@ -9,11 +9,11 @@ import rrt
 def main(mesh_file_name, px_per_meter,
          padding_meters, num_nodes,
          epsilon, extend_lines,
-         crossing_paths, erosion_iterations):
+         crossing_paths, erosion_iterations,z):
 
     verts, faces = rrt.load_obj(mesh_file_name)
 
-    cross_section = rrt.get_cross_section(verts, faces)
+    cross_section = rrt.get_cross_section(verts, faces,z)
 
     cross_section_2d = [c[:, 0:2] for c in cross_section]
 
@@ -42,10 +42,10 @@ def main(mesh_file_name, px_per_meter,
     min_x, max_x, min_y, max_y = rrt.cross_section_bounds(cross_section_2d, padding_meters)
 
     mesh_dir = os.path.dirname(mesh_file_name)
-    free_file_name = os.path.join(mesh_dir, 'free.png')
-    floormap_file_name = os.path.join(mesh_dir, 'floormap.png')
-    rrt_file_name = os.path.join(mesh_dir, 'rrt.npz')
-    config_file_name = os.path.join(mesh_dir, 'config.pickle')
+    free_file_name = os.path.join(mesh_dir, 'free_{}.png'.format(z))
+    floormap_file_name = os.path.join(mesh_dir, 'floormap_{}.png'.format(z))
+    rrt_file_name = os.path.join(mesh_dir, 'rrt_{}.npz'.format(z))
+    config_file_name = os.path.join(mesh_dir, 'config_{}.pickle'.format(z))
 
     cv2.imwrite(floormap_file_name, floor_map)
     print("Wrote {}".format(floormap_file_name))
@@ -72,10 +72,11 @@ if __name__ == "__main__":
     parser.add_argument('-n', '--num_nodes', type=int, default=5000)
     parser.add_argument('-i', '--erosion_iterations', type=int, default=5)
     parser.add_argument('-e', '--epsilon', type=float, default=.1)
+    parser.add_argument('-z', '--height', type=float, default=.5)
     parser.add_argument('-l', '--extend_lines', default=False, action="store_true")
     parser.add_argument('-x', '--no_crossing_paths', default=False, action="store_true")
     args = parser.parse_args()
     main(args.mesh_name, 500,
          0.5, args.num_nodes,
          args.epsilon, args.extend_lines,
-         not args.no_crossing_paths, args.erosion_iterations)
+         not args.no_crossing_paths, args.erosion_iterations,z=args.height)
