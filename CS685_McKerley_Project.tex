@@ -63,24 +63,25 @@ Environment structure.
 
 The Gibson buildings come as three-dimensional graphs. To extract
 two-dimensional floor plans I used a Python module called meshcut.py
-(kindly provided by Yimeng Li.) \ref{fig:Allensville_3D} shows a 3D
-representation of the Allensville apartment. When a 2D images is extracted
-at a height of 0.5 meters the result is found in \ref{fig:Allensville_2D}.
-This picture is an image saved from the Python module matplotlib. But it
-can be converted to an OpenCV-compatible numpy array and mantipulated in
-memory or saved to file.
+(kindly provided by Yimeng Li.) Figure \ref{fig:Allensville_3D} shows
+a 3D representation of the Allensville apartment. When a 2D images is
+extracted at a height of 0.5 meters the result is found in
+\ref{fig:Allensville_2D}.  This picture is an image saved from the
+Python module matplotlib. But it can be converted to an
+OpenCV-compatible numpy array and mantipulated in memory or saved to
+file.
 
 \begin{centering}
 \begin{figure}[ht]
 \caption{3D Image of Allensville}
 \centering
-\includegraphics[width=5cm]{Allensville_thumb.png}
+\includegraphics[width=7cm]{Allensville_thumb.png}
 \label{fig:Allensville_3D}
 \end{figure}
 \begin{figure}[ht]
 \caption{2D Image of Allensville at 0.5 m}
 \centering
-\includegraphics[width=5cm]{Allensville.png}
+\includegraphics[width=7cm]{Allensville.png}
 \label{fig:Allensville_2D}
 \end{figure}
 \end{centering}
@@ -115,14 +116,14 @@ pixels of erosion, so the spacing effect is not realistically
 large. However, more erosion could certainly be used to get the
 correct effect.
 
-\ref{fig:free} shows a rasterized free space map for Allensville after
+Figure \ref{fig:free} shows a rasterized free space map for Allensville after
 gaps have been filled and erosion applied.
 
 \begin{centering}
 \begin{figure}[ht]
 \caption{Allensville free space image.}
 \centering
-\includegraphics[width=5cm]{free.png}
+\includegraphics[width=7cm]{free.png}
 \label{fig:free}
 \end{figure}
 \end{centering}
@@ -140,8 +141,167 @@ is:
 \item Erode image with a 5x5 mask a configurable number of times (5 by default.)
 \end{enumerate}
 
-\subsection{Miscellaneous}
+\subsection{Creating the RRT}
 
+The algorithm to produce the RRT is fairly simple:
+
+\begin{enumerate}
+\item Find random starting point in free space.
+\item Perform $N$ times.
+\begin{enumerate}
+\item Find random point $s$ in anywhere the image.
+\item Find existing point $t$ in tree closest to $s$.
+\item If line of length $d$ can be drawn from $s$ to $t$ without
+  hitting an obstruction (or, optionally, another line), then draw it,
+  and add end of line as a new point in the RRT.
+\end{enumerate}
+\end{enumerate}
+
+The check for an obstruction is made by using Bresenham line-drawing
+to trace the line on the free-space image. If it hits a black pixel
+then the line is not used. If the option not to cross tree lines is
+specified, then a copy of the free space image is made, and each
+successful new edge is drawn in black on it. This prevents future
+edges from crossing it.  A sample RRT is shown in
+\ref{fig:floormap}. The number of nodes to draw in the tree is
+configurable. For Allensville 5000 is sufficient to fill the
+graph. Larger spaces require more.
+
+\begin{centering}
+\begin{figure}[ht]
+\caption{Allensville RRT} \centering
+\includegraphics[width=7cm]{Allensville_floormap.png}
+\label{fig:floormap}
+\end{figure}
+\end{centering}
+
+Two programs can be used to produce an RRT: make\_rrt.py, and
+rrtgui.py. Both use the library file rrt.py. make\_rrt.py creates RRTs
+with several command line options and saves the floormap image, with
+the RRT, the free image, and the parameters to files. rrtgui.py is a
+demonstration program that displays an animation of the RRT as rrt.py
+creates it. I did not get to the point of saving the products of
+rrtgui.py to file.
+
+Before evaluating the usefulness of the RRT, we'll examine the method
+to find paths between arbitrary points.
+
+\subsection{Finding a Path Using A* Search}
+
+Given a starting point, and an ending point, both in real world
+coordinate measured in meters, A* is used to find a path on the tree
+between them. This algorithm is basically a direct implementation of
+the one found in Russell and Norvig. The only difficulty was finding a
+heapq with replacement. I didn't find one, but subclassed the standard
+Python module as AStarHeap to work with special objects that have a
+deleted flag to support deletion. The AStarHeap has a dictionary of
+nodes to track when a node value already exists. This allows it to
+implement a method to see if a nodes already exists with a worse cost.
+
+So the algorithm uses the free image to find the closest node to each
+of the start and end points, and then find the path. This is very
+fast. A sample path is shown in \ref{fig:path_1}. The path start at
+the green circle and ends at the red one. This path looks reasonable,
+but because it has to follow the meandering RRT path, it doesn't
+really look as good as it could be. 
+
+\begin{centering}
+\begin{figure}[ht]
+\caption{Allensville Sample Path 1} \centering
+\includegraphics[width=7cm]{Allensville_floormap_with_path_1.png}
+\label{fig:path_1}
+\end{figure}
+\end{centering}
+
+If we look carefully at the circled area in \ref{fig:gap} we see that
+the leaves of the RRT do not meet up behind the object (a sofa.) This
+is because an RRT really is a tree, not a graph. This leads to a path
+from one side of the sofa to the other that goes around in front of
+is, as shown in \ref{fig:path_2}.
+
+\begin{centering}
+\begin{figure}[ht]
+\caption{Allensville RRT Gap} \centering
+\includegraphics[width=7cm]{Allensville_RRT_Gap.png}
+\label{fig:gap}
+\end{figure}
+\end{centering}
+
+\begin{centering}
+\begin{figure}[ht]
+\caption{Allensville Sample Path 2} \centering
+\includegraphics[width=7cm]{Allensville_gap_path.png}
+\label{fig:path_2}
+\end{figure}
+\end{centering}
+
+\subsection{Refining the Path}
+
+In order to make the path more efficient we do the following:
+
+\begin{enumerate}
+\item Create a new graph with just the nodes and edges of the path.
+\item Repeatedly add random edges between pairs of unconnected nodes.
+\item Check cost of A* search for graph (since it is no longer a tree.)
+\item When the cost appears to converge (no more improvements are
+  being made to the cost of A*) then return the new path.
+\end{enumerate}
+
+We can see the effect in \ref{fig:path_3} of refining the path from
+\ref{fig:path_2}. The path now goes directly behind the sofa, instead
+of going around the front. But rather than refine the path every time,
+we'd rather be able to have a static map and calculate the path one time.
+
+\begin{centering}
+\begin{figure}[ht]
+\caption{Refined Path} \centering
+\includegraphics[width=7cm]{Allensville_path_3.png}
+\label{fig:path_3}
+\end{figure}
+\end{centering}
+
+\subsection{Refining the Map}
+
+To make a fixed map that is more efficient, we perform the the steps
+in the previous section a configurable number of times on random start
+and end points. After each iteration, we add the new path the the map
+graph. Once this is done we have a graph where the most common paths
+between major areas of the building have more direct straight-line
+routes.
+
+Figure \ref{fig:refined_map} shows a map with 100 added paths. Figures
+\ref{fig:path_4} and \ref{fig:path_5} show paths created using the
+refined map.
+
+\begin{centering}
+\begin{figure}[ht]
+\caption{Refined Map} \centering
+\includegraphics[width=7cm]{Allensville_refined_map.png}
+\label{fig:refined_map}
+\end{figure}
+\end{centering}
+
+\begin{centering}
+\begin{figure}[ht]
+\caption{Refined Path 2} \centering
+\includegraphics[width=7cm]{Allensville_better_1.png}
+\label{fig:path_4}
+\end{figure}
+\end{centering}
+
+\begin{centering}
+\begin{figure}[ht]
+\caption{Refined Path 3} \centering
+\includegraphics[width=7cm]{Allensville_better_2.png}
+\label{fig:path_5}
+\end{figure}
+\end{centering}
+
+\section{Results}
+
+Several results have already been shown. To demonstrate
+the fairly general applicability of this approach, here are
+some refined maps of other Gibson environments.
 
 \subsection{References}
 
@@ -150,21 +310,6 @@ single-spaced, at the end of your paper. When referenced in the text,
 enclose the citation number in square brackets, for
 example~\cite{Authors06}.  Where appropriate, include the name(s) of
 editors of referenced books.
-
-\begin{table}
-\begin{center}
-\begin{tabular}{|l|c|}
-\hline
-Method & Frobnability \\
-\hline\hline
-Theirs & Frumpy \\
-Yours & Frobbly \\
-Ours & Makes one's heart Frob\\
-\hline
-\end{tabular}
-\end{center}
-\caption{Results.   Ours is better.}
-\end{table}
 
 %-------------------------------------------------------------------------
 \subsection{Illustrations, graphs, and photographs}
