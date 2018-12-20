@@ -48,7 +48,8 @@ George Mason University\\
   Environment buildings that would allow robots to navigate from one
   arbitrary point in the map to another. This navigation should find
   reasonable straight-line paths. My approach was to use
-  Rapidly-Exploring Random Trees, which provided maps in a matter of
+  Rapidly-Exploring Random Trees, developed by
+  Lavalle and Kuffner~\cite{lavalle01}, which provided maps in a matter of
   seconds. A* search can traverse these maps, and the results paths
   refined to be straighter. Many samples paths can be found and
   refined, with the resulting paths added to the map. These refined
@@ -61,13 +62,14 @@ Environment structure.
 
 \subsection{Extract Two-Dimensional Floorplan}
 
-The Gibson buildings come as three-dimensional graphs. To extract
-two-dimensional floor plans I used a Python module called meshcut.py
-(kindly provided by Yimeng Li.) Figure \ref{fig:Allensville_3D} shows
-a 3D representation of the Allensville apartment. When a 2D images is
-extracted at a height of 0.5 meters the result is found in
-\ref{fig:Allensville_2D}.  This picture is an image saved from the
-Python module matplotlib. But it can be converted to an
+The Gibson buildings come as three-dimensional graphs from the
+GibsonEnv database~\cite{xiazamirhe2018gibsonenv}. To extract
+two-dimensional floor plans I used a Python module called
+meshcut.py~\cite{jrebetez00} (kindly provided by Yimeng Li.) Figure
+\ref{fig:Allensville_3D} shows a 3D representation of the Allensville
+apartment. When a 2D images is extracted at a height of 0.5 meters the
+result is found in \ref{fig:Allensville_2D}.  This picture is an image
+saved from the Python module matplotlib. But it can be converted to an
 OpenCV-compatible numpy array and mantipulated in memory or saved to
 file.
 
@@ -88,24 +90,25 @@ file.
 
 \subsection{Preparing Floorplan for Geometry Checks}
 
-The size of the buildings are not large compared to the expected size
-of robot we would expect to operate in them. There also need to be
-many checks of lines for collisions with solid objects (walls and
-other items in the rooms.) An efficient way to do these checks is by
-rasterizing the maps and using Bresenham's line-drawing algorithm to
-draw on the image. Solid areas are represented as black pixels, and
-free areas as white pixels. The way to do this to use opencv.floodFill()
+The size of the buildings are not large compared to the size of robot
+we would expect to operate in them. There also need to be many checks
+of lines for collisions with solid objects (walls and other items in
+the rooms.) An efficient way to do these checks is by rasterizing the
+maps and using Bresenham's line-drawing algorithm to find obstructions
+on the image. Solid areas are represented as black pixels, and free
+areas as white pixels. To do this I used use opencv.floodFill()
 starting at a point in the free space to fill the freespace with white
 pixels.
 
 Even though the dataset documentation say most of the Gibson maps have
-hard the holes filled, it is still the case that the 2D has visible
-holes in the walls. This makes the floodFill() operation fail. These
-gaps can be filled ``manually'', but this is tedious. So a function
-finds the end-points to all lines, and connects them to the nearest
-endpoint of another line. This can be done efficiently with numpy
-representations of the line arrays. Not all maps work, but enough to
-have a decent set to work with.
+the holes filled, it is still the case that the 2D cross-sections have
+visible holes in the walls. This makes the floodFill() operation
+fail. These gaps can be filled ``manually'', by examining the
+cross-sections and adding appropriate lines, but this is tedious. So a
+function finds the end-points to all lines, and connects them to the
+nearest endpoint of another line. This can be done efficiently with a
+numpy representations of the line arrays. Not all maps work, but
+enough to have a decent set to work with.
 
 Finally, There are still small gaps between objects that are evidently
 too small for a robot to fit through, but which the RRT lines would
@@ -137,8 +140,9 @@ is:
 \item Pad lines out with configurable quanity (typically 0.5 m in examples.)
 \item Draw lines with opencv.polylines() on free image initialized to black.
 \item Calculate lines to fill gaps and draw free image.
-\item Floodfill image with white starting at fixed point in image (this should be made configurable.)
-\item Erode image with a 5x5 mask a configurable number of times (5 by default.)
+\item Floodfill image with white starting at a fixed point in image (this should be made configurable.)
+\item Erode image with a 5x5 mask and a configurable number of times
+  (5 by default.)
 \end{enumerate}
 
 \subsection{Creating the RRT}
@@ -165,7 +169,7 @@ successful new edge is drawn in black on it. This prevents future
 edges from crossing it.  A sample RRT is shown in
 \ref{fig:floormap}. The number of nodes to draw in the tree is
 configurable. For Allensville 5000 is sufficient to fill the
-graph. Larger spaces require more.
+graph. Larger spaces require more nodes.
 
 \begin{centering}
 \begin{figure}[ht]
@@ -191,16 +195,18 @@ to find paths between arbitrary points.
 Given a starting point, and an ending point, both in real world
 coordinate measured in meters, A* is used to find a path on the tree
 between them. This algorithm is basically a direct implementation of
-the one found in Russell and Norvig. The only difficulty was finding a
-heapq with replacement. I didn't find one, but subclassed the standard
-Python module as AStarHeap to work with special objects that have a
-deleted flag to support deletion. The AStarHeap has a dictionary of
-nodes to track when a node value already exists. This allows it to
-implement a method to see if a nodes already exists with a worse cost.
+the one found in Russell and
+Norvig~\cite{Russell:2009:AIM:1671238}. The only difficulty was
+finding a heapq with replacement. I didn't find one, but subclassed
+the standard Python module as AStarHeap to work with special objects
+that have a deleted flag to support replacement. The AStarHeap has a
+dictionary of nodes to track when a node value already exists. This
+allows it to implement a method to see if a node already exists with
+a worse cost.
 
-So the algorithm uses the free image to find the closest node to each
+The algorithm uses the free image to find the closest node to each
 of the start and end points, and then find the path. This is very
-fast. A sample path is shown in \ref{fig:path_1}. The path start at
+fast. A sample path is shown in \ref{fig:path_1}. The path starts at
 the green circle and ends at the red one. This path looks reasonable,
 but because it has to follow the meandering RRT path, it doesn't
 really look as good as it could be. 
@@ -213,11 +219,13 @@ really look as good as it could be.
 \end{figure}
 \end{centering}
 
-If we look carefully at the circled area in \ref{fig:gap} we see that
-the leaves of the RRT do not meet up behind the object (a sofa.) This
-is because an RRT really is a tree, not a graph. This leads to a path
-from one side of the sofa to the other that goes around in front of
-is, as shown in \ref{fig:path_2}.
+There are other inefficiencies besides the meandering RRT path. If we
+look carefully at the circled area in \ref{fig:gap} we see that the
+leaves of the RRT do not meet up behind the object (a sofa.) This is
+because an RRT really is a tree, not a graph, so the edges never
+connect to existing nodes. This leads to a path from one side of the
+sofa to the other that goes around in front of is, as shown in
+\ref{fig:path_2}.
 
 \begin{centering}
 \begin{figure}[ht]
@@ -242,7 +250,7 @@ In order to make the path more efficient we do the following:
 \begin{enumerate}
 \item Create a new graph with just the nodes and edges of the path.
 \item Repeatedly add random edges between pairs of unconnected nodes.
-\item Check cost of A* search for graph (since it is no longer a tree.)
+\item Check cost of A* search for new graph (since it is no longer a tree.)
 \item When the cost appears to converge (no more improvements are
   being made to the cost of A*) then return the new path.
 \end{enumerate}
@@ -299,61 +307,86 @@ refined map.
 
 \section{Results}
 
-Several results have already been shown. To demonstrate
-the fairly general applicability of this approach, here are
-some refined maps of other Gibson environments.
+Several results have already been shown. To demonstrate the
+scalability of this approach, figure \ref{fig:brinnon_map} shows a map
+for the Brinnon environment. Brinnon is a much larger environment than
+Allensville. The latter is about 8m by 8m, and has about seven
+rooms. Brinnon is 20m by 25m, and has about 14 seperate rooms. Fewer
+larger environments can be made free of holes, and this is the largest
+one I found. It took approximately 60 seconds to create the 2D view of
+the Brinnon house; 23 seconds to create the RRT; and another 130
+seconds to create the refined map. Once these are done, creating paths
+is nearly instantaneous. Figure \ref{fig:brinnon_path_1} shows one
+such path. If this were being used by a robot in this environment, the
+time to create the map would be small, and subsequent searches for
+efficient paths would be negligable.
 
-\subsection{References}
+\begin{centering}
+\begin{figure}[ht]
+\caption{Brinnon Map} \centering
+\includegraphics[width=7cm]{Brinnon_refined.png}
+\label{fig:brinnon_map}
+\end{figure}
+\end{centering}
 
-List and number all bibliographical references in 9-point Times,
-single-spaced, at the end of your paper. When referenced in the text,
-enclose the citation number in square brackets, for
-example~\cite{Authors06}.  Where appropriate, include the name(s) of
-editors of referenced books.
+\begin{centering}
+\begin{figure}[ht]
+\caption{Brinnon Path} \centering
+\includegraphics[width=7cm]{Brinnon_path_1.png}
+\label{fig:brinnon_path_1}
+\end{figure}
+\end{centering}
 
-%-------------------------------------------------------------------------
-\subsection{Illustrations, graphs, and photographs}
+I admit I didn't spent much time comparing my approach to other
+techniques. I spent most of my time working on my program and
+improving it. I wrote the graphical program because I thought the
+animation would be pretty neat, and it would be easier to test various
+environments with it. These things were true, but writing the UI took
+quite a bit of time because I've never done much graphical programming
+in Python. 
 
-All graphics should be centered.  Please ensure that any point you wish to
-make is resolvable in a printed copy of the paper.  Resize fonts in figures
-to match the font in the body text, and choose line widths which render
-effectively in print.  Many readers (and reviewers), even of an electronic
-copy, will choose to print your paper in order to read it.  You cannot
-insist that they do otherwise, and therefore must not assume that they can
-zoom in to see tiny details on a graphic.
+\section{Conclusion}
 
-When placing figures in \LaTeX, it's almost always best to use
-\verb+\includegraphics+, and to specify the  figure width as a multiple of
-the line width as in the example below
-{\small\begin{verbatim}
-   \usepackage[dvips]{graphicx} ...
-   \includegraphics[width=0.8\linewidth]
-                   {myfile.eps}
-\end{verbatim}
-}
+Using RRTs proved a promising approach for creating static maps for
+navigating Gibson environment. In a matter of a few minutes detailed
+maps based on RRTs can be produced that will allow paths to be
+generated using A* search.
 
+One limitation of the approach is that the refining relies on
+line-of-sight between vertexes. In these fairly simple environments
+this does not appear to be a problem. If there were complex,
+zig-zagging corriders, however, this limitations might be more
+apparent in the results.
 
-%-------------------------------------------------------------------------
-\subsection{Color}
+There are command line programs (make\_rrt.py and find\_path.py) which
+have many command-line parameters available to control the creation of
+the maps. They also save the generated maps and paths to files. The
+GUI tool, rrtgui.py, has only hard-coded values (except for choosing
+the environment), and it cannot save the maps and paths it
+produces. Further work would be to enhance rrtgui.py to allow setting
+of parameters and saving work.py. Also, the command-line tools do not
+do the refining. They would need to have these capabilities added to
+be useful.
 
-Color is valuable, and will be visible to readers of the electronic copy.
-However ensure that, when printed on a monochrome printer, no important
-information is lost by the conversion to grayscale.
+The code I wrote is available in a public
+\href{https://github.com/tenther/cs685-project}{Github repository}. The primary code artifacts are:
 
-%------------------------------------------------------------------------
-\section{Final copy}
+\begin{enumerate}
+\item rrt.py: Library of functions for extracting a cross-section from
+  a 3D represenation of a building, creating the free-space image,
+  generating RRTs, and finding paths with A* search.
+\item bresenham.py: My implementation of the Bresenham line-drawing algorithm.
+\item find\_path.py: Command-line program to find a path given start and end points and
+  an RRT file. 
+\item make\_rrt.py: Command-line program use rrt.py to create an RRT
+  from a Gibson Environment building.
+\item rrtgui.py: A graphical program to read Gibson Environment files,
+  create RRTs, find paths, refine paths, and perform multi-path refining.
+\end{enumerate}
 
-You must include your signed IEEE copyright release form when you submit
-your finished paper. We MUST have this form before your paper can be
-published in the proceedings.
+There are some other Python programs in there, but they are mostly cruft.
 
-Please direct any questions to the production editor in charge of these
-proceedings at the IEEE Computer Society Press: Phone (714) 821-8380, or
-Fax (714) 761-1784.
-
-{\small
+\bibliography{CS685_McKerley_Project}
 \bibliographystyle{ieee}
-\bibliography{egbib}
-}
 
 \end{document}

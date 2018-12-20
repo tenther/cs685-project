@@ -79,13 +79,13 @@ class RrtDisplay(Gtk.Window):
         vbox.pack_start(self.status_bar, False, True, 0)
         self.status_bar.push(self.context_id, "Pick a Gibson folder to load")
 
-        self.scale = 0.1
-        self.epsilon = 0.1
+        self.scale = 0.08
+        self.epsilon = 0.15
         self.erosion_iterations = 5
-        self.num_nodes = 10000
-        self.num_nodes = 5000
+        self.num_nodes = 12000
+#        self.num_nodes = 5000
         self.z = 8.0
-        self.z = 0.5
+#        self.z = 0.5
         self.pf = None
         self.solution = None
         self.cross_section_2d = None
